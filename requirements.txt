@@ -1,0 +1,8 @@
+
+flask
+flask-socketio
+eventlet
+python-deriv-api
+websocket-client
+gunicorn
+python-dotenv
