@@ -19,6 +19,7 @@ def get_status():
         'losses': bot.losses,
         'total_trades': bot.total_trades,
         'logs': bot.logs,
+        'current_digit': bot.current_digit,
         'settings': {
             'market': bot.market,
             'stake': bot.stake,

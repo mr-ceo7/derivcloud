@@ -30,6 +30,7 @@ class TradingBot:
         self.wins = 0
         self.losses = 0
         self.logs = []
+        self.current_digit = None # New: Store single current digit
         self.consecutive_counter = 0
 
     def log(self, message):
@@ -121,6 +122,9 @@ class TradingBot:
                     quote_str = "{:.2f}".format(quote) # Most indices are 2 decimals, need to be careful with crypto
                     last_digit = int(quote_str[-1])
                     
+                    # Update Current Digit
+                    self.current_digit = last_digit
+                    
                     # Check Strategy
                     if last_digit == self.prediction_digit:
                         self.consecutive_counter += 1
@@ -135,7 +139,7 @@ class TradingBot:
                         try:
                             proposal = await self.api.proposal({
                                 "proposal": 1,
-                                "amount": self.stake,
+                                "amount": round(self.stake, 2),
                                 "basis": "stake",
                                 "contract_type": "DIGITOVER", 
                                 "currency": "USD",
@@ -150,7 +154,7 @@ class TradingBot:
                                 self.consecutive_counter = 0 # Reset
                                 continue
 
-                            buy = await self.api.buy({"buy": proposal['proposal']['id'], "price": self.stake})
+                            buy = await self.api.buy({"buy": proposal['proposal']['id'], "price": round(self.stake, 2)})
                             
                             if buy.get('error'):
                                 self.log(f"Buy Error: {buy['error']['message']}")

@@ -9,6 +9,14 @@ function updateStats() {
             document.getElementById('wins').innerText = data.wins;
             document.getElementById('losses').innerText = data.losses;
 
+            // Update Current Digit
+            const digitDisplay = document.getElementById('digit-display');
+            if (data.current_digit !== null) {
+                digitDisplay.innerText = data.current_digit;
+                // Simple animation/color feedback?
+                // For now just plain text update.
+            }
+
             // Update Badge & Buttons
             const badge = document.getElementById('status-badge');
             if (data.is_running) {
