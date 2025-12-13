@@ -139,23 +139,25 @@ class TradingBot:
                 self.consecutive_counter = 0
 
             if self.consecutive_counter >= self.consecutive_triggers:
-                self.log(f"Trigger Reached! Quote: {quote} -> Buying DIGITOVER {self.prediction_digit}")
-                self.consecutive_counter = 0 # Reset
                 
-                # Send Proposal
-                # NOTE: Using '0' (integer) for barrier and raw dictionary as verified in test_raw_ws.py
+                # Send Proposal IMMEDIATELY
+                # Using '0' (integer) for barrier and raw dictionary
                 req = {
                     "proposal": 1,
-                    "amount": self.stake, # Float 0.35 works
+                    "amount": self.stake, 
                     "basis": "stake",
                     "contract_type": "DIGITOVER",
                     "currency": self.currency,
                     "duration": self.duration,
                     "duration_unit": "t",
                     "symbol": self.market,
-                    "barrier": 0 # Integer 0 for barrier!
+                    "barrier": 0 
                 }
                 await self.send(req)
+                
+                # Log after sending to ensure zero latency
+                self.log(f"Trigger Reached! Quote: {quote} -> Buying DIGITOVER {self.prediction_digit}")
+                self.consecutive_counter = 0 # Reset
 
         elif msg_type == 'proposal':
             proposal = data['proposal']
