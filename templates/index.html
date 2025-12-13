@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,6 +8,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/style.css">
 </head>
+
 <body>
     <div class="container">
         <header>
@@ -75,6 +77,8 @@
                     <button id="save-btn" onclick="saveSettings()">Save Settings</button>
                     <button id="start-btn" onclick="startBot()">Start Bot</button>
                     <button id="stop-btn" onclick="stopBot()" disabled>Stop</button>
+                    <button id="reset-btn" onclick="resetStats()" style="background: #30363d; margin-left: 10px;">Reset
+                        Stats</button>
                 </div>
             </div>
 
@@ -89,4 +93,5 @@
 
     <script src="/static/script.js"></script>
 </body>
+
 </html>

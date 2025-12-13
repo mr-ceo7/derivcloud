@@ -54,6 +54,11 @@ def stop_bot():
     bot.stop_bot()
     return jsonify({'status': 'success', 'message': 'Bot stopped'})
 
+@app.route('/api/reset', methods=['POST'])
+def reset_bot():
+    bot.reset_stats()
+    return jsonify({'status': 'success', 'message': 'Stats reset'})
+
 if __name__ == '__main__':
     # Threaded mode is essential for the bot background thread to work alongside Flask dev server
     app.run(debug=True, host='0.0.0.0', port=5001, threaded=True)

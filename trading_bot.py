@@ -49,6 +49,14 @@ class TradingBot:
         if consecutive: self.consecutive_triggers = int(consecutive)
         self.log(f"Settings updated: Market={self.market}, Stake={self.stake}, Pred={self.prediction_digit}, Consec={self.consecutive_triggers}")
 
+    def reset_stats(self):
+        self.total_profit = 0.0
+        self.total_trades = 0
+        self.wins = 0
+        self.losses = 0
+        self.logs = []
+        self.log("Stats reset by user.")
+
     def start_bot(self):
         if self.is_running:
             return
@@ -92,90 +100,98 @@ class TradingBot:
             # Subscribe to Ticks
             source_ticks = await self.api.subscribe({'ticks': self.market})
             
-            async for tick in source_ticks:
-                if not self.is_running:
-                    # Unsubscribe logic is tricky in loop, just breaking ensures clean exit next time
-                    break
-                
-                quote = tick['tick']['quote']
-                # Get last digit
-                # Formatting to ensure we get the true last digit displayed
-                quote_str = "{:.2f}".format(quote) # Most indices are 2 decimals, need to be careful with crypto
-                last_digit = int(quote_str[-1])
-                
-                # Check Strategy
-                if last_digit == self.prediction_digit:
-                    self.consecutive_counter += 1
-                    # self.log(f"Tick: {quote} (Digit: {last_digit}) | Count: {self.consecutive_counter}/{self.consecutive_triggers}")
-                else:
-                    self.consecutive_counter = 0
-                    # self.log(f"Tick: {quote} (Digit: {last_digit}) | Reset")
-
-                if self.consecutive_counter >= self.consecutive_triggers:
-                    self.log(f"Trigger Reached! Quote: {quote} -> Buying DIGITOVER {self.prediction_digit}")
+            # Bridge RxPY Observable to AsyncIO Queue
+            tick_queue = asyncio.Queue()
+            
+            def on_next(tick):
+                # Schedule put into queue on the loop
+                asyncio.run_coroutine_threadsafe(tick_queue.put(tick), self.loop)
+            
+            # Subscribe using RxPY
+            source_ticks.subscribe(on_next)
+            
+            while self.is_running:
+                try:
+                    # Wait for next tick
+                    tick = await tick_queue.get()
                     
-                    # Execute Trade
-                    # Note: For 'Over 0', we technically buy 'DIGITOVER' with barrier 0. 
-                    # If prediction is 9, we can't buy over 9. 
-                    # If config is "Digit Match", we use DIGITMATCH. 
-                    # User request was specifically "Over 0", but now they want customizable.
-                    # Usually "Over X" means if X=0, we win on 1-9.
+                    quote = tick['tick']['quote']
+                    # Get last digit
+                    # Formatting to ensure we get the true last digit displayed
+                    quote_str = "{:.2f}".format(quote) # Most indices are 2 decimals, need to be careful with crypto
+                    last_digit = int(quote_str[-1])
                     
-                    try:
-                        proposal = await self.api.proposal({
-                            "proposal": 1,
-                            "amount": self.stake,
-                            "basis": "stake",
-                            "contract_type": "DIGITOVER", 
-                            "currency": "USD",
-                            "duration": self.duration,
-                            "duration_unit": "t",
-                            "symbol": self.market,
-                            "barrier": str(self.prediction_digit)
-                        })
-                        
-                        if proposal.get('error'):
-                            self.log(f"Proposal Error: {proposal['error']['message']}")
-                            self.consecutive_counter = 0 # Reset
-                            continue
+                    # Check Strategy
+                    if last_digit == self.prediction_digit:
+                        self.consecutive_counter += 1
+                        # self.log(f"Tick: {quote} (Digit: {last_digit}) | Count: {self.consecutive_counter}/{self.consecutive_triggers}")
+                    else:
+                        self.consecutive_counter = 0
+                        # self.log(f"Tick: {quote} (Digit: {last_digit}) | Reset")
 
-                        buy = await self.api.buy({"buy": proposal['proposal']['id'], "price": self.stake})
+                    if self.consecutive_counter >= self.consecutive_triggers:
+                        self.log(f"Trigger Reached! Quote: {quote} -> Buying DIGITOVER {self.prediction_digit}")
                         
-                        if buy.get('error'):
-                            self.log(f"Buy Error: {buy['error']['message']}")
-                        else:
-                            contract_id = buy['buy']['contract_id']
-                            self.log(f"Trade Placed! ID: {contract_id}")
+                        try:
+                            proposal = await self.api.proposal({
+                                "proposal": 1,
+                                "amount": self.stake,
+                                "basis": "stake",
+                                "contract_type": "DIGITOVER", 
+                                "currency": "USD",
+                                "duration": self.duration,
+                                "duration_unit": "t",
+                                "symbol": self.market,
+                                "barrier": str(self.prediction_digit)
+                            })
                             
-                            # Wait for result (in a simple way for now, this blocks the tick stream which is GOOD for 1 tick trades)
-                            # Ideally we monitor separately, but for 1 tick, blocking is acceptable to avoid overlap
-                            while True:
-                                status = await self.api.proposal_open_contract({'contract_id': contract_id})
-                                contract = status['proposal_open_contract']
-                                is_sold = contract.get('is_sold')
-                                
-                                if is_sold:
-                                    profit = float(contract.get('profit', 0))
-                                    self.total_profit += profit
-                                    self.total_trades += 1
-                                    if profit > 0:
-                                        self.wins += 1
-                                        self.log(f"WIN! Profit: +${profit}")
-                                    else:
-                                        self.losses += 1
-                                        self.log(f"LOSS. Profit: ${profit}")
-                                    
-                                    # Update Balance
-                                    balance_data = await self.api.balance()
-                                    self.current_balance = balance_data['balance']['balance']
-                                    break
-                                await asyncio.sleep(0.5)
+                            if proposal.get('error'):
+                                self.log(f"Proposal Error: {proposal['error']['message']}")
+                                self.consecutive_counter = 0 # Reset
+                                continue
 
-                    except Exception as e:
-                        self.log(f"Trade Exception: {e}")
-                    
-                    # Reset counter after trade
-                    self.consecutive_counter = 0
+                            buy = await self.api.buy({"buy": proposal['proposal']['id'], "price": self.stake})
+                            
+                            if buy.get('error'):
+                                self.log(f"Buy Error: {buy['error']['message']}")
+                            else:
+                                contract_id = buy['buy']['contract_id']
+                                self.log(f"Trade Placed! ID: {contract_id}")
+                                
+                                # Wait for result (in a simple way for now, this blocks the tick stream which is GOOD for 1 tick trades)
+                                while True:
+                                    status = await self.api.proposal_open_contract({'contract_id': contract_id})
+                                    contract = status['proposal_open_contract']
+                                    is_sold = contract.get('is_sold')
+                                    
+                                    if is_sold:
+                                        profit = float(contract.get('profit', 0))
+                                        self.total_profit += profit
+                                        self.total_trades += 1
+                                        if profit > 0:
+                                            self.wins += 1
+                                            self.log(f"WIN! Profit: +${profit}")
+                                        else:
+                                            self.losses += 1
+                                            self.log(f"LOSS. Profit: ${profit}")
+                                        
+                                        # Update Balance
+                                        balance_data = await self.api.balance()
+                                        self.current_balance = balance_data['balance']['balance']
+                                        break
+                                    await asyncio.sleep(0.5)
+
+                        except Exception as e:
+                            self.log(f"Trade Exception: {e}")
+                        
+                        # Reset counter after trade
+                        self.consecutive_counter = 0
+
+                except asyncio.CancelledError:
+                    break
+                except Exception as e:
+                    self.log(f"Loop Error: {e}")
+                    await asyncio.sleep(1)
             
         except Exception as e:
             self.log(f"Critical Bot Error: {e}")

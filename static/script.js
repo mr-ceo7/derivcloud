@@ -27,7 +27,7 @@ function updateStats() {
 
             // Sync Settings if not editing (optional - maybe annoying if user is typing, so skipping for now)
             // But we should load them on first load.
-            
+
             // Update Logs
             const logContainer = document.getElementById('logs');
             logContainer.innerHTML = data.logs.map(log => `<div class="log-entry">${log}</div>`).join('');
@@ -46,24 +46,35 @@ function saveSettings() {
 
     fetch('/api/settings', {
         method: 'POST',
-        headers: {'Content-Type': 'application/json'},
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
     })
-    .then(res => res.json())
-    .then(data => alert(data.message));
+        .then(res => res.json())
+        .then(data => alert(data.message));
 }
 
 function startBot() {
     fetch('/api/start', { method: 'POST' })
-    .then(res => res.json())
-    .then(data => {
-        if(data.status === 'error') alert(data.message);
-        updateStats();
-    });
+        .then(res => res.json())
+        .then(data => {
+            if (data.status === 'error') alert(data.message);
+            updateStats();
+        });
 }
 
 function stopBot() {
     fetch('/api/stop', { method: 'POST' });
+}
+
+function resetStats() {
+    if (confirm("Are you sure you want to reset all profit/loss stats?")) {
+        fetch('/api/reset', { method: 'POST' })
+            .then(res => res.json())
+            .then(data => {
+                alert(data.message);
+                updateStats();
+            });
+    }
 }
 
 // Initial Settings Load
