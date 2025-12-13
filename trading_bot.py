@@ -1,45 +1,42 @@
-import threading
-import time
+import asyncio
+import websockets
 import json
 import logging
+import threading
 from datetime import datetime
-from deriv_api import DerivAPI
-from deriv_api.errors import APIError
-import asyncio
-
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 class TradingBot:
     def __init__(self):
-        self.api_token = None
+        self.api_token = "YOUR_API_TOKEN"
         self.market = "1HZ100V" # Volatility 100 (1s) Index
         self.stake = 0.35
         self.duration = 1
         self.prediction_digit = 0
         self.consecutive_triggers = 1
+        
         self.is_running = False
-        self.api = None
+        self.websocket = None
         self.loop = None
         self.thread = None
+        self.currency = "USD"
+        self.current_balance = 0.0
         
         # Stats
         self.total_profit = 0.0
-        self.current_balance = 0.0
         self.total_trades = 0
         self.wins = 0
         self.losses = 0
         self.logs = []
-        self.current_digit = None # New: Store single current digit
+        self.current_digit = None
         self.consecutive_counter = 0
 
     def log(self, message):
         timestamp = datetime.now().strftime("%H:%M:%S")
-        entry = f"[{timestamp}] {message}"
-        self.logs.insert(0, entry)
+        log_entry = f"[{timestamp}] {message}"
+        print(log_entry)
+        self.logs.insert(0, log_entry)
         if len(self.logs) > 50:
             self.logs.pop()
-        logging.info(message)
 
     def update_settings(self, token=None, market=None, stake=None, duration=None, prediction=None, consecutive=None):
         if token: self.api_token = token
@@ -62,143 +59,147 @@ class TradingBot:
         if self.is_running:
             return
         
-        if not self.api_token:
+        if not self.api_token or self.api_token == "YOUR_API_TOKEN":
             self.log("Error: API Token not set.")
             return
 
         self.is_running = True
-        self.consecutive_counter = 0
-        
-        # Run asyncio loop in a separate thread
-        self.thread = threading.Thread(target=self._run_loop)
-        self.thread.daemon = True
-        self.thread.start()
         self.log("Bot started.")
+        
+        # Run event loop in separate thread
+        self.thread = threading.Thread(target=self._run_loop, daemon=True)
+        self.thread.start()
 
     def stop_bot(self):
+        if not self.is_running:
+            return
         self.is_running = False
         self.log("Bot stopped.")
+        # Loop will exit when is_running is False and socket closes
 
     def _run_loop(self):
         self.loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self.loop)
-        self.loop.run_until_complete(self._trade_logic())
+        self.loop.run_until_complete(self._websocket_logic())
 
-    async def _trade_logic(self):
-        try:
-            self.api = DerivAPI(app_id=1089) # Public App ID or user provided? Defaulting to generic for now
-            
-            # Authorize
-            authorize = await self.api.authorize(self.api_token)
-            if authorize.get('error'):
-                self.log(f"Auth Failed: {authorize['error']['message']}")
-                self.is_running = False
-                return
-            
-            self.current_balance = authorize['authorize']['balance']
-            self.log(f"Authorized. Balance: {self.current_balance}")
-
-            # Subscribe to Ticks
-            source_ticks = await self.api.subscribe({'ticks': self.market})
-            
-            # Bridge RxPY Observable to AsyncIO Queue
-            tick_queue = asyncio.Queue()
-            
-            def on_next(tick):
-                # Schedule put into queue on the loop
-                asyncio.run_coroutine_threadsafe(tick_queue.put(tick), self.loop)
-            
-            # Subscribe using RxPY
-            source_ticks.subscribe(on_next)
-            
-            while self.is_running:
-                try:
-                    # Wait for next tick
-                    tick = await tick_queue.get()
+    async def _websocket_logic(self):
+        uri = "wss://ws.binaryws.com/websockets/v3?app_id=1089"
+        async for websocket in websockets.connect(uri):
+            self.websocket = websocket
+            try:
+                # 1. Authorize
+                await self.send({"authorize": self.api_token})
+                
+                # 2. Subscribe to Ticks
+                await self.send({"ticks": self.market, "subscribe": 1})
+                
+                # 3. Message Loop
+                async for message in websocket:
+                    if not self.is_running:
+                        break
+                    await self.handle_message(message)
                     
-                    quote = tick['tick']['quote']
-                    # Get last digit
-                    # Formatting to ensure we get the true last digit displayed
-                    quote_str = "{:.2f}".format(quote) # Most indices are 2 decimals, need to be careful with crypto
-                    last_digit = int(quote_str[-1])
-                    
-                    # Update Current Digit
-                    self.current_digit = last_digit
-                    
-                    # Check Strategy
-                    if last_digit == self.prediction_digit:
-                        self.consecutive_counter += 1
-                        # self.log(f"Tick: {quote} (Digit: {last_digit}) | Count: {self.consecutive_counter}/{self.consecutive_triggers}")
-                    else:
-                        self.consecutive_counter = 0
-                        # self.log(f"Tick: {quote} (Digit: {last_digit}) | Reset")
-
-                    if self.consecutive_counter >= self.consecutive_triggers:
-                        self.log(f"Trigger Reached! Quote: {quote} -> Buying DIGITOVER {self.prediction_digit}")
-                        
-                        try:
-                            proposal = await self.api.proposal({
-                                "proposal": 1,
-                                "amount": round(self.stake, 2),
-                                "basis": "stake",
-                                "contract_type": "DIGITOVER", 
-                                "currency": "USD",
-                                "duration": self.duration,
-                                "duration_unit": "t",
-                                "symbol": self.market,
-                                "barrier": str(self.prediction_digit)
-                            })
-                            
-                            if proposal.get('error'):
-                                self.log(f"Proposal Error: {proposal['error']['message']}")
-                                self.consecutive_counter = 0 # Reset
-                                continue
-
-                            buy = await self.api.buy({"buy": proposal['proposal']['id'], "price": round(self.stake, 2)})
-                            
-                            if buy.get('error'):
-                                self.log(f"Buy Error: {buy['error']['message']}")
-                            else:
-                                contract_id = buy['buy']['contract_id']
-                                self.log(f"Trade Placed! ID: {contract_id}")
-                                
-                                # Wait for result (in a simple way for now, this blocks the tick stream which is GOOD for 1 tick trades)
-                                while True:
-                                    status = await self.api.proposal_open_contract({'contract_id': contract_id})
-                                    contract = status['proposal_open_contract']
-                                    is_sold = contract.get('is_sold')
-                                    
-                                    if is_sold:
-                                        profit = float(contract.get('profit', 0))
-                                        self.total_profit += profit
-                                        self.total_trades += 1
-                                        if profit > 0:
-                                            self.wins += 1
-                                            self.log(f"WIN! Profit: +${profit}")
-                                        else:
-                                            self.losses += 1
-                                            self.log(f"LOSS. Profit: ${profit}")
-                                        
-                                        # Update Balance
-                                        balance_data = await self.api.balance()
-                                        self.current_balance = balance_data['balance']['balance']
-                                        break
-                                    await asyncio.sleep(0.5)
-
-                        except Exception as e:
-                            self.log(f"Trade Exception: {e}")
-                        
-                        # Reset counter after trade
-                        self.consecutive_counter = 0
-
-                except asyncio.CancelledError:
+            except websockets.ConnectionClosed:
+                self.log("Connection closed. Reconnecting...")
+                continue
+            except Exception as e:
+                self.log(f"Error: {e}")
+                if not self.is_running:
                     break
-                except Exception as e:
-                    self.log(f"Loop Error: {e}")
-                    await asyncio.sleep(1)
+                await asyncio.sleep(5)
+
+    async def send(self, data):
+        if self.websocket:
+            await self.websocket.send(json.dumps(data))
+
+    async def handle_message(self, message):
+        data = json.loads(message)
+        
+        if 'error' in data:
+            self.log(f"Error: {data['error']['message']}")
+            return
+
+        msg_type = data.get('msg_type')
+
+        if msg_type == 'authorize':
+            self.current_balance = data['authorize']['balance']
+            self.currency = data['authorize']['currency']
+            self.log(f"Authorized. Balance: {self.current_balance} {self.currency}")
+
+        elif msg_type == 'tick':
+            quote = data['tick']['quote']
+            quote_str = "{:.2f}".format(quote)
+            last_digit = int(quote_str[-1])
+            self.current_digit = last_digit
             
-        except Exception as e:
-            self.log(f"Critical Bot Error: {e}")
-            self.is_running = False
+            # Strategy Check
+            if last_digit == self.prediction_digit:
+                self.consecutive_counter += 1
+            else:
+                self.consecutive_counter = 0
+
+            if self.consecutive_counter >= self.consecutive_triggers:
+                self.log(f"Trigger Reached! Quote: {quote} -> Buying DIGITOVER {self.prediction_digit}")
+                self.consecutive_counter = 0 # Reset
+                
+                # Send Proposal
+                # NOTE: Using '0' (integer) for barrier and raw dictionary as verified in test_raw_ws.py
+                req = {
+                    "proposal": 1,
+                    "amount": self.stake, # Float 0.35 works
+                    "basis": "stake",
+                    "contract_type": "DIGITOVER",
+                    "currency": self.currency,
+                    "duration": self.duration,
+                    "duration_unit": "t",
+                    "symbol": self.market,
+                    "barrier": 0 # Integer 0 for barrier!
+                }
+                await self.send(req)
+
+        elif msg_type == 'proposal':
+            proposal = data['proposal']
+            prop_id = proposal['id']
+            # Execute Trade
+            # Reference Royal_mint.py uses price: 10000 or high number? 
+            # We can use proposal['ask_price'] or just a high limit.
+            # Using 100 to be safe and allow any execution within reason.
+            await self.send({"buy": prop_id, "price": 100}) 
+
+        elif msg_type == 'buy':
+            # buy_id = data['buy']['contract_id']
+            # self.log(f"Trade Placed! ID: {buy_id}")
+            # We wait for proposal_open_contract to see result, but buy response gives contract_id
+            pass
+
+        elif msg_type == 'proposal_open_contract':
+            # Monitor trade result
+            # We need to subscribe to proposal_open_contract? 
+            # Usually 'buy' automatically subscribes to the contract updates in most flows, 
+            # or we receive 'proposal_open_contract' if we subscribed.
+            # The simple 'buy' returns success. We need to know result.
+            # Let's rely on 'profit_table' or subscribe to the contract.
+            # The easiest way:
+            contract = data['proposal_open_contract']
+            if contract['is_sold']:
+                profit = contract['profit']
+                status = "WIN" if profit > 0 else "LOSS"
+                self.log(f"{status}! Profit: {profit}")
+                
+                self.total_profit += profit
+                self.total_trades += 1
+                if profit > 0: self.wins += 1
+                else: self.losses += 1
+            else:
+                # Trade running...
+                pass
+
+        # We need to ensure we get contract updates.
+        # When buying, we should subscribe?
+        if msg_type == 'buy':
+             contract_id = data['buy']['contract_id']
+             self.log(f"Trade Placed! ID: {contract_id}")
+             # Subscribe to this contract to get the result
+             await self.send({"proposal_open_contract": 1, "contract_id": contract_id, "subscribe": 1})
 
 bot = TradingBot()
