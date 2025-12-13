@@ -13,6 +13,7 @@ class TradingBot:
         self.duration = 1
         self.prediction_digit = 0
         self.consecutive_triggers = 1
+        self.smart_mode = False # Trade both 0 and 9
         
         self.is_running = False
         self.websocket = None
@@ -29,6 +30,11 @@ class TradingBot:
         self.logs = []
         self.current_digit = None
         self.consecutive_counter = 0
+        self.streak_digit = -1
+        self.start_time = None
+        self.trade_history = []
+        self.active_trades = {} # contract_id -> trigger_info
+        self.last_trigger = None # Temp store for trigger details
 
     def log(self, message):
         timestamp = datetime.now().strftime("%H:%M:%S")
@@ -38,14 +44,15 @@ class TradingBot:
         if len(self.logs) > 50:
             self.logs.pop()
 
-    def update_settings(self, token=None, market=None, stake=None, duration=None, prediction=None, consecutive=None):
+    def update_settings(self, token=None, market=None, stake=None, duration=None, prediction=None, consecutive=None, smart_mode=None):
         if token: self.api_token = token
         if market: self.market = market
         if stake: self.stake = float(stake)
         if duration: self.duration = int(duration)
         if prediction: self.prediction_digit = int(prediction)
         if consecutive: self.consecutive_triggers = int(consecutive)
-        self.log(f"Settings updated: Market={self.market}, Stake={self.stake}, Pred={self.prediction_digit}, Consec={self.consecutive_triggers}")
+        if smart_mode is not None: self.smart_mode = (str(smart_mode).lower() == 'true')
+        self.log(f"Settings updated: Market={self.market}, Stake={self.stake}, Pred={self.prediction_digit}, Consec={self.consecutive_triggers}, Smart={self.smart_mode}")
 
     def reset_stats(self):
         self.total_profit = 0.0
@@ -53,6 +60,8 @@ class TradingBot:
         self.wins = 0
         self.losses = 0
         self.logs = []
+        self.trade_history = []
+        self.active_trades = {}
         self.log("Stats reset by user.")
 
     def start_bot(self):
@@ -64,6 +73,7 @@ class TradingBot:
             return
 
         self.is_running = True
+        self.start_time = datetime.now()
         self.log("Bot started.")
         
         # Run event loop in separate thread
@@ -74,6 +84,7 @@ class TradingBot:
         if not self.is_running:
             return
         self.is_running = False
+        self.start_time = None
         self.log("Bot stopped.")
         # Loop will exit when is_running is False and socket closes
 
@@ -132,32 +143,76 @@ class TradingBot:
             last_digit = int(quote_str[-1])
             self.current_digit = last_digit
             
-            # Strategy Check
-            if last_digit == self.prediction_digit:
+            # Generic Streak Tracking
+            if self.current_digit == self.prediction_digit: # Manual Mode Match
+                 pass # Logic handled below? 
+                 
+            # Better Approach: fast streak tracking
+            if not hasattr(self, 'streak_digit'): self.streak_digit = -1
+            
+            if last_digit == self.streak_digit:
                 self.consecutive_counter += 1
             else:
-                self.consecutive_counter = 0
+                self.consecutive_counter = 1
+                self.streak_digit = last_digit
 
-            if self.consecutive_counter >= self.consecutive_triggers:
+            # Trigger Logic
+            trigger_met = False
+            contract_type = "DIGITOVER"
+            barrier = 0
+            
+            # Check conditions
+            # 1. Manual Target
+            if not self.smart_mode and last_digit == self.prediction_digit and self.consecutive_counter >= self.consecutive_triggers:
+                trigger_met = True
+                barrier = last_digit
+                if last_digit == 9:
+                    contract_type = "DIGITUNDER"
+                    barrier = 9
+                else:
+                    contract_type = "DIGITOVER"
+            
+            # 2. Smart Mode (Any 0 or 9 streak)
+            elif self.smart_mode and self.consecutive_counter >= self.consecutive_triggers:
+                if last_digit == 0:
+                    trigger_met = True
+                    contract_type = "DIGITOVER"
+                    barrier = 0
+                elif last_digit == 9:
+                    trigger_met = True
+                    contract_type = "DIGITUNDER"
+                    barrier = 9
+
+            if trigger_met:
                 
+                # Capture Trigger Details BEFORE sending
+                self.last_trigger = {
+                    'entry_time': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    'entry_quote': quote,
+                    'entry_digit': last_digit,
+                    'contract_type': contract_type,
+                    'barrier': barrier
+                }
+
                 # Send Proposal IMMEDIATELY
-                # Using '0' (integer) for barrier and raw dictionary
                 req = {
                     "proposal": 1,
                     "amount": self.stake, 
                     "basis": "stake",
-                    "contract_type": "DIGITOVER",
+                    "contract_type": contract_type,
                     "currency": self.currency,
                     "duration": self.duration,
                     "duration_unit": "t",
                     "symbol": self.market,
-                    "barrier": 0 
+                    "barrier": barrier 
                 }
                 await self.send(req)
                 
-                # Log after sending to ensure zero latency
-                self.log(f"Trigger Reached! Quote: {quote} -> Buying DIGITOVER {self.prediction_digit}")
-                self.consecutive_counter = 0 # Reset
+                # Log after sending
+                action = f"Buying {contract_type} {barrier}"
+                self.log(f"Trigger! Quote: {quote} (L: {last_digit}) -> {action}")
+                self.consecutive_counter = 0 # Reset streak after trade
+                self.streak_digit = -1       # Reset logic
 
         elif msg_type == 'proposal':
             proposal = data['proposal']
@@ -169,39 +224,68 @@ class TradingBot:
             await self.send({"buy": prop_id, "price": 100}) 
 
         elif msg_type == 'buy':
-            # buy_id = data['buy']['contract_id']
-            # self.log(f"Trade Placed! ID: {buy_id}")
-            # We wait for proposal_open_contract to see result, but buy response gives contract_id
-            pass
+             contract_id = data['buy']['contract_id']
+             # Link this contract to the latest trigger info (from the immediate previous tick cycle)
+             if self.last_trigger:
+                 self.active_trades[contract_id] = self.last_trigger
+                 self.last_trigger = None # Clear it
+             else:
+                 self.log(f"Warning: Buy confirmed but no trigger data found!")
+
+             self.log(f"Trade Placed! ID: {contract_id}. Waiting for result...")
+             # Subscribe to this contract to get the result
+             await self.send({"proposal_open_contract": 1, "contract_id": contract_id, "subscribe": 1})
 
         elif msg_type == 'proposal_open_contract':
-            # Monitor trade result
-            # We need to subscribe to proposal_open_contract? 
-            # Usually 'buy' automatically subscribes to the contract updates in most flows, 
-            # or we receive 'proposal_open_contract' if we subscribed.
-            # The simple 'buy' returns success. We need to know result.
-            # Let's rely on 'profit_table' or subscribe to the contract.
-            # The easiest way:
             contract = data['proposal_open_contract']
             if contract['is_sold']:
+                contract_id = contract['contract_id']
                 profit = contract['profit']
                 status = "WIN" if profit > 0 else "LOSS"
-                self.log(f"{status}! Profit: {profit}")
+                
+                # Get Entry Details
+                trigger_info = self.active_trades.get(contract_id, {})
+                entry_time = trigger_info.get('entry_time', 'N/A')
+                entry_quote = trigger_info.get('entry_quote', 'N/A')
+                entry_digit = trigger_info.get('entry_digit', 'N/A')
+                ctype = trigger_info.get('contract_type', 'DIGIT?')
+                
+                # Get Exit Details
+                exit_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S") # Approximation, or use contract['sell_time']
+                exit_quote = contract.get('exit_tick_display_value', 'N/A')
+                exit_digit = 'N/A'
+                if exit_quote != 'N/A':
+                    exit_digit = str(exit_quote)[-1]
+                
+                # Detailed Log
+                # "Time | Type | Entry: Q=... L=... | Exit: Q=... L=... | Profit: ..."
+                detailed_msg = (f"{status}! {ctype}. Entry: {entry_quote} (L:{entry_digit}). "
+                                f"Exit: {exit_quote} (L:{exit_digit}). Profit: {profit}")
+                
+                self.log(detailed_msg)
+                
+                # Save Record
+                record = {
+                    "Contract ID": contract_id,
+                    "Type": ctype,
+                    "Entry Time": entry_time,
+                    "Entry Quote": entry_quote,
+                    "Entry Digit": entry_digit,
+                    "Exit Time": exit_time,
+                    "Exit Quote": exit_quote,
+                    "Exit Digit": exit_digit,
+                    "Status": status,
+                    "Profit": profit
+                }
+                self.trade_history.append(record)
+                
+                # Clean up active trades
+                if contract_id in self.active_trades:
+                    del self.active_trades[contract_id]
                 
                 self.total_profit += profit
                 self.total_trades += 1
                 if profit > 0: self.wins += 1
                 else: self.losses += 1
-            else:
-                # Trade running...
-                pass
-
-        # We need to ensure we get contract updates.
-        # When buying, we should subscribe?
-        if msg_type == 'buy':
-             contract_id = data['buy']['contract_id']
-             self.log(f"Trade Placed! ID: {contract_id}")
-             # Subscribe to this contract to get the result
-             await self.send({"proposal_open_contract": 1, "contract_id": contract_id, "subscribe": 1})
 
 bot = TradingBot()

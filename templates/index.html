@@ -12,14 +12,20 @@
 <body>
     <div class="container">
         <header>
-            <h1>Deriv Auto-Trader</h1>
-            <div id="status-badge" class="badge stopped">STOPPED</div>
+            <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                <h1>Royal Mint Cloud</h1>
+                <div style="text-align: right;">
+                    <p style="margin: 0;">Status: <span id="status-text" class="status-stopped">Stopped</span></p>
+                    <p style="margin: 5px 0 0 0; font-size: 0.9rem;">Runtime: <span id="runtime"
+                            style="font-family: monospace; color: #fff;">00:00:00</span></p>
+                </div>
+            </div>
         </header>
 
         <div class="stats-grid">
             <div class="card">
                 <h3>Profit/Loss</h3>
-                <div id="profit" class="value">$0.00</div>
+                <div id="profit" class="value" style="color: #da3633;">0.00</div>
             </div>
             <div class="card">
                 <h3>Balance</h3>
@@ -27,11 +33,11 @@
             </div>
             <div class="card">
                 <h3>Wins</h3>
-                <div id="wins" class="value">0</div>
+                <div id="wins" class="value" style="color: #238636;">0</div>
             </div>
             <div class="card">
                 <h3>Losses</h3>
-                <div id="losses" class="value">0</div>
+                <div id="losses" class="value" style="color: #da3633;">0</div>
             </div>
         </div>
 
@@ -77,17 +83,26 @@
                         <small>Trades trigger if digit > X</small>
                     </div>
                     <div class="form-group">
-                        <label>Consecutive Triggers</label>
-                        <input type="number" id="consecutive" value="1" min="1">
-                        <small>Wait for X times match</small>
+                        <label for="smart-mode">Smart Strategy (0 & 9):</label>
+                        <div style="display: flex; align-items: center;">
+                            <input type="checkbox" id="smart-mode"
+                                style="width: 20px; height: 20px; margin-right: 10px;">
+                            <span style="font-size: 0.9rem; color: #8b949e;">Auto-trade <strong>Over 0</strong> OR
+                                <strong>Under 9</strong> streaks.</span>
+                        </div>
                     </div>
+                </div>
+                <div class="form-group">
+                    <label for="consecutive">Consecutive Triggers:</label>
+                    <input type="number" id="consecutive" value="1" min="1">
+                    <small>Wait for X times match</small>
                 </div>
                 <div class="actions">
                     <button id="save-btn" onclick="saveSettings()">Save Settings</button>
                     <button id="start-btn" onclick="startBot()">Start Bot</button>
-                    <button id="stop-btn" onclick="stopBot()" disabled>Stop</button>
-                    <button id="reset-btn" onclick="resetStats()" style="background: #30363d; margin-left: 10px;">Reset
-                        Stats</button>
+                    <button id="stop-btn" onclick="stopBot()" class="danger">Stop Bot</button>
+                    <button id="reset-btn" onclick="resetStats()" class="warning">Reset Stats</button>
+                    <button id="export-btn" onclick="exportLogs()" class="secondary">Export CSV</button>
                 </div>
             </div>
 

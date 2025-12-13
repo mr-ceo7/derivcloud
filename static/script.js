@@ -3,8 +3,28 @@ function updateStats() {
         .then(res => res.json())
         .then(data => {
             // Update Stats
-            document.getElementById('balance').innerText = data.balance ? `$${data.balance}` : '---';
-            document.getElementById('profit').innerText = `$${data.profit}`;
+            // Assuming statusText is a defined element, otherwise this would cause an error.
+            // If statusText is meant to replace the 'badge' logic, that would be a larger change.
+            // For now, inserting as provided, assuming statusText is defined elsewhere or will be.
+            // The instruction provided these lines directly after fetch, but they must be inside the .then(data => {}) block.
+            // Also, the instruction seems to be a partial replacement for the 'Update Stats' section.
+            // I will replace the existing 'Update Stats' block with the provided lines,
+            // and ensure the `statusText` lines are within the `data` scope.
+
+            // The instruction implies these lines should be added/modified within the data processing block.
+            // The `statusText` variable is not defined in the original code.
+            // Assuming `statusText` refers to an element that needs to be retrieved, e.g., `document.getElementById('status-text')`.
+            // Since the instruction doesn't define it, I'll add a placeholder definition for `statusText` for syntactic correctness.
+            // If the user intended to replace the 'badge' logic, the instruction is incomplete.
+            const statusText = document.getElementById('status-text'); // Placeholder: assuming this element exists
+            if (statusText) { // Check if element exists to prevent errors if it's not in HTML
+                statusText.textContent = data.is_running ? "Running" : "Stopped";
+                statusText.className = data.is_running ? "status-running" : "status-stopped";
+            }
+
+            document.getElementById('runtime').textContent = data.running_time || "00:00:00";
+            document.getElementById('balance').textContent = data.balance ? data.balance.toFixed(2) : "---";
+            document.getElementById('profit').textContent = data.profit.toFixed(2);
             document.getElementById('profit').style.color = data.profit >= 0 ? '#238636' : '#da3633';
             document.getElementById('wins').innerText = data.wins;
             document.getElementById('losses').innerText = data.losses;
@@ -43,19 +63,18 @@ function updateStats() {
 }
 
 function saveSettings() {
-    const payload = {
-        token: document.getElementById('token').value,
-        market: document.getElementById('market').value,
-        stake: document.getElementById('stake').value,
-        duration: document.getElementById('duration').value,
-        prediction: document.getElementById('prediction').value,
-        consecutive: document.getElementById('consecutive').value
-    };
+    const token = document.getElementById('token').value;
+    const market = document.getElementById('market').value;
+    const stake = document.getElementById('stake').value;
+    const duration = document.getElementById('duration').value;
+    const prediction = document.getElementById('prediction').value;
+    const consecutive = document.getElementById('consecutive').value;
+    const smartMode = document.getElementById('smart-mode').checked;
 
     fetch('/api/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify({ token, market, stake, duration, prediction, consecutive, smart_mode: smartMode })
     })
         .then(res => res.json())
         .then(data => alert(data.message));
@@ -85,6 +104,10 @@ function resetStats() {
     }
 }
 
+function exportLogs() {
+    window.location.href = '/api/export_logs';
+}
+
 // Initial Settings Load
 fetch('/api/status').then(res => res.json()).then(data => {
     document.getElementById('market').value = data.settings.market;
@@ -92,6 +115,9 @@ fetch('/api/status').then(res => res.json()).then(data => {
     document.getElementById('duration').value = data.settings.duration;
     document.getElementById('prediction').value = data.settings.prediction;
     document.getElementById('consecutive').value = data.settings.consecutive;
+    document.getElementById('smart-mode').checked = data.settings.smart_mode;
+
+    updateUI(data);
 });
 
 // Poll every 1s
