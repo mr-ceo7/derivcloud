@@ -33,6 +33,7 @@ class TradingBot:
         # Trio Coverage settings
         self.trio_role = "over_5"    # "over_5", "under_5", "match_5"
         self.trio_trigger = "every_tick"  # "every_tick" or "on_digit_5"
+        self.trio_digit = 5  # Prediction digit for trio (0-9)
         
         # Martingale Recovery settings
         self.martingale_enabled = False
@@ -75,7 +76,7 @@ class TradingBot:
         if len(self.logs) > 50:
             self.logs.pop()
 
-    def update_settings(self, token=None, market=None, stake=None, duration=None, prediction=None, consecutive=None, smart_mode=None, strategy=None, range_barrier=None, range_direction=None, martingale_enabled=None, martingale_mode=None, martingale_multiplier=None, martingale_increment=None, martingale_max_stake=None, trio_role=None, trio_trigger=None):
+    def update_settings(self, token=None, market=None, stake=None, duration=None, prediction=None, consecutive=None, smart_mode=None, strategy=None, range_barrier=None, range_direction=None, martingale_enabled=None, martingale_mode=None, martingale_multiplier=None, martingale_increment=None, martingale_max_stake=None, trio_role=None, trio_trigger=None, trio_digit=None):
         if token: self.api_token = token
         if market: self.market = market
         if stake:
@@ -95,6 +96,7 @@ class TradingBot:
         if martingale_max_stake is not None: self.martingale_max_stake = float(martingale_max_stake)
         if trio_role: self.trio_role = trio_role
         if trio_trigger: self.trio_trigger = trio_trigger
+        if trio_digit is not None: self.trio_digit = int(trio_digit)
         self.log(f"Settings updated: Strategy={self.strategy}, Stake={self.stake}, Martingale={'ON' if self.martingale_enabled else 'OFF'}")
 
     def reset_stats(self):
@@ -274,24 +276,24 @@ class TradingBot:
                         barrier = self.range_barrier
 
             elif self.strategy == "trio_coverage":
-                # ── STRATEGY 3: Trio Coverage (Digit 5 Hedge) ──
+                # ── STRATEGY 3: Trio Coverage (Digit Hedge) ──
                 should_trigger = False
                 if self.trio_trigger == "every_tick":
                     should_trigger = True
-                elif self.trio_trigger == "on_digit_5" and last_digit == 5:
+                elif self.trio_trigger == "on_digit_5" and last_digit == self.trio_digit:
                     should_trigger = True
                 
                 if should_trigger:
                     trigger_met = True
                     if self.trio_role == "over_5":
                         contract_type = "DIGITOVER"
-                        barrier = 5
+                        barrier = self.trio_digit
                     elif self.trio_role == "under_5":
                         contract_type = "DIGITUNDER"
-                        barrier = 5
+                        barrier = self.trio_digit
                     elif self.trio_role == "match_5":
                         contract_type = "DIGITMATCH"
-                        barrier = 5
+                        barrier = self.trio_digit
 
             if trigger_met and not self.waiting_for_result:
                 
@@ -558,7 +560,8 @@ class BotManager:
                     'current_stake': bot.stake,
                     'martingale_profit': round(bot.martingale_profit, 2),
                     'trio_role': bot.trio_role,
-                    'trio_trigger': bot.trio_trigger
+                    'trio_trigger': bot.trio_trigger,
+                    'trio_digit': bot.trio_digit
                 }
             })
         return statuses

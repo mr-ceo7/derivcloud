@@ -133,22 +133,27 @@
                 <div id="trio-coverage-settings" class="hidden">
                     <div class="row">
                         <div class="form-group">
+                            <label>Prediction Digit (0-9)</label>
+                            <input type="number" id="trio-digit" value="5" min="0" max="9">
+                            <small>The digit to trade around</small>
+                        </div>
+                        <div class="form-group">
                             <label>Trio Role</label>
                             <select id="trio-role">
-                                <option value="over_5" selected>Over 5 (DIGITOVER)</option>
-                                <option value="under_5">Under 5 (DIGITUNDER)</option>
-                                <option value="match_5">Match 5 (DIGITMATCH)</option>
+                                <option value="over_5" selected>Over (DIGITOVER)</option>
+                                <option value="under_5">Under (DIGITUNDER)</option>
+                                <option value="match_5">Match (DIGITMATCH)</option>
                             </select>
                             <small>Each bot needs a different role</small>
                         </div>
-                        <div class="form-group">
-                            <label>Trigger Mode</label>
-                            <select id="trio-trigger">
-                                <option value="every_tick" selected>Every Tick</option>
-                                <option value="on_digit_5">Only When Digit = 5</option>
-                            </select>
-                            <small>When to place the trade</small>
-                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Trigger Mode</label>
+                        <select id="trio-trigger">
+                            <option value="every_tick" selected>Every Tick</option>
+                            <option value="on_digit_5">Only When Digit Matches</option>
+                        </select>
+                        <small>When to place the trade</small>
                     </div>
                 </div>
                 <div class="form-group">

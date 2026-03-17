@@ -117,6 +117,7 @@ function loadSettingsToForm(settings) {
     document.getElementById('martingale-max-stake').value = settings.martingale_max_stake;
     if (settings.trio_role) document.getElementById('trio-role').value = settings.trio_role;
     if (settings.trio_trigger) document.getElementById('trio-trigger').value = settings.trio_trigger;
+    if (settings.trio_digit !== undefined) document.getElementById('trio-digit').value = settings.trio_digit;
     toggleStrategySettings();
     toggleMartingaleSettings();
     toggleMartingaleMode();
@@ -188,6 +189,7 @@ function getSettingsPayload() {
         martingale_max_stake: document.getElementById('martingale-max-stake').value,
         trio_role: document.getElementById('trio-role').value,
         trio_trigger: document.getElementById('trio-trigger').value,
+        trio_digit: document.getElementById('trio-digit').value,
     };
 }
 
