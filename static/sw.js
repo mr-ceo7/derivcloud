@@ -1,4 +1,4 @@
-const CACHE_NAME = 'rmc-bot-v1';
+const CACHE_NAME = 'rmc-bot-v2';
 const ASSETS = [
     '/',
     '/static/style.css',
