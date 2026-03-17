@@ -43,6 +43,8 @@ class TradingBot:
         self.trade_history = []
         self.active_trades = {} # contract_id -> trigger_info
         self.last_trigger = None # Temp store for trigger details
+        self.last_tick_epoch = None  # Track last processed tick to skip duplicates
+        self.waiting_for_result = False  # Prevent re-triggering while trade is pending
 
     def log(self, message):
         timestamp = datetime.now().strftime("%H:%M:%S")
@@ -74,6 +76,8 @@ class TradingBot:
         self.trade_history = []
         self.active_trades = {}
         self.range_consecutive_counter = 0
+        self.last_tick_epoch = None
+        self.waiting_for_result = False
         self.log("Stats reset by user.")
 
     def start_bot(self):
@@ -150,6 +154,13 @@ class TradingBot:
             self.log(f"Authorized. Balance: {self.current_balance} {self.currency}")
 
         elif msg_type == 'tick':
+            tick_epoch = data['tick'].get('epoch')
+            
+            # Skip duplicate ticks (same epoch = same tick rebroadcast)
+            if tick_epoch and tick_epoch == self.last_tick_epoch:
+                return
+            self.last_tick_epoch = tick_epoch
+            
             quote = data['tick']['quote']
             quote_str = "{:.2f}".format(quote)
             last_digit = int(quote_str[-1])
@@ -222,7 +233,9 @@ class TradingBot:
                         contract_type = "DIGITUNDER"
                         barrier = self.range_barrier
 
-            if trigger_met:
+            if trigger_met and not self.waiting_for_result:
+                
+                self.waiting_for_result = True  # Block until this trade resolves
                 
                 # Capture Trigger Details BEFORE sending
                 self.last_trigger = {
@@ -273,6 +286,7 @@ class TradingBot:
                  self.log(f"Warning: Buy confirmed but no trigger data found!")
 
              self.log(f"Trade Placed! ID: {contract_id}. Waiting for result...")
+             self.waiting_for_result = False  # Allow new triggers
              # Subscribe to this contract to get the result
              await self.send({"proposal_open_contract": 1, "contract_id": contract_id, "subscribe": 1})
 

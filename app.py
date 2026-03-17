@@ -114,4 +114,4 @@ def export_logs():
 
 if __name__ == '__main__':
     # Threaded mode is essential for the bot background thread to work alongside Flask dev server
-    app.run(debug=True, host='0.0.0.0', port=5001, threaded=True)
+    app.run(debug=True, host='0.0.0.0', port=5001, threaded=True, use_reloader=False)
