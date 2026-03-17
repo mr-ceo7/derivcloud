@@ -5,7 +5,7 @@ import os
 import csv
 import io
 from datetime import datetime
-from trading_bot import bot
+from trading_bot import manager
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'secret!'
@@ -19,97 +19,147 @@ def favicon():
     return send_from_directory(os.path.join(app.root_path, 'static'),
                                'favicon.png', mimetype='image/png')
 
+# ── Multi-Account API ──────────────────────────────────────────────
+
 @app.route('/api/status')
 def status():
-    runtime = "0s"
-    if bot.is_running and bot.start_time:
-        delta = datetime.now() - bot.start_time
-        # Format as HH:MM:SS
-        seconds = int(delta.total_seconds())
-        h = seconds // 3600
-        m = (seconds % 3600) // 60
-        s = seconds % 60
-        runtime = f"{h:02d}:{m:02d}:{s:02d}"
-
     return jsonify({
-        'is_running': bot.is_running,
-        'running_time': runtime,
-        'balance': bot.current_balance,
-        'profit': round(bot.total_profit, 2),
-        'wins': bot.wins,
-        'losses': bot.losses,
-        'total_trades': bot.total_trades,
-        'logs': bot.logs,
-        'recent_ticks': [],
-        'current_digit': bot.current_digit,
-        'settings': {
-            'market': bot.market,
-            'stake': bot.base_stake,
-            'duration': bot.duration,
-            'prediction': bot.prediction_digit,
-            'consecutive': bot.consecutive_triggers,
-            'smart_mode': bot.smart_mode,
-            'token_set': bot.api_token != "YOUR_API_TOKEN",
-            'strategy': bot.strategy,
-            'range_barrier': bot.range_barrier,
-            'range_direction': bot.range_direction,
-            'martingale_enabled': bot.martingale_enabled,
-            'martingale_mode': bot.martingale_mode,
-            'martingale_multiplier': bot.martingale_multiplier,
-            'martingale_increment': bot.martingale_increment,
-            'martingale_max_stake': bot.martingale_max_stake,
-            'current_stake': bot.stake,
-            'martingale_profit': round(bot.martingale_profit, 2)
-        }
+        'accounts': manager.get_all_statuses(),
+        'total_profit': manager.total_profit(),
+        'active_count': manager.active_count(),
+        'total_accounts': len(manager.bots)
     })
+
+@app.route('/api/add_account', methods=['POST'])
+def add_account():
+    data = request.json
+    token = data.get('token')
+    if not token:
+        return jsonify({'status': 'error', 'message': 'Token is required'}), 400
+    try:
+        account_id, balance, currency = manager.add_account(token)
+        return jsonify({
+            'status': 'success',
+            'message': f'Account {account_id} added',
+            'account_id': account_id,
+            'balance': balance,
+            'currency': currency
+        })
+    except ValueError as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 400
+
+@app.route('/api/remove_account', methods=['POST'])
+def remove_account():
+    data = request.json
+    account_id = data.get('account_id')
+    try:
+        manager.remove_account(account_id)
+        return jsonify({'status': 'success', 'message': f'Account {account_id} removed'})
+    except ValueError as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 400
 
 @app.route('/api/settings', methods=['POST'])
 def update_settings():
     data = request.json
-    bot.update_settings(
-        token=data.get('token'),
-        market=data.get('market'),
-        stake=data.get('stake'),
-        duration=data.get('duration'),
-        prediction=data.get('prediction'),
-        consecutive=data.get('consecutive'),
-        smart_mode=data.get('smart_mode'),
-        strategy=data.get('strategy'),
-        range_barrier=data.get('range_barrier'),
-        range_direction=data.get('range_direction'),
-        martingale_enabled=data.get('martingale_enabled'),
-        martingale_mode=data.get('martingale_mode'),
-        martingale_multiplier=data.get('martingale_multiplier'),
-        martingale_increment=data.get('martingale_increment'),
-        martingale_max_stake=data.get('martingale_max_stake')
-    )
-    return jsonify({'status': 'success', 'message': 'Settings updated'})
+    account_id = data.get('account_id')
+    apply_to_all = data.get('apply_to_all', False)
+
+    settings_kwargs = {
+        'market': data.get('market'),
+        'stake': data.get('stake'),
+        'duration': data.get('duration'),
+        'prediction': data.get('prediction'),
+        'consecutive': data.get('consecutive'),
+        'smart_mode': data.get('smart_mode'),
+        'strategy': data.get('strategy'),
+        'range_barrier': data.get('range_barrier'),
+        'range_direction': data.get('range_direction'),
+        'martingale_enabled': data.get('martingale_enabled'),
+        'martingale_mode': data.get('martingale_mode'),
+        'martingale_multiplier': data.get('martingale_multiplier'),
+        'martingale_increment': data.get('martingale_increment'),
+        'martingale_max_stake': data.get('martingale_max_stake'),
+    }
+
+    if apply_to_all:
+        for bot in manager.bots.values():
+            bot.update_settings(**settings_kwargs)
+        return jsonify({'status': 'success', 'message': 'Settings applied to all accounts'})
+    elif account_id:
+        try:
+            bot = manager.get_account(account_id)
+            bot.update_settings(**settings_kwargs)
+            return jsonify({'status': 'success', 'message': f'Settings updated for {account_id}'})
+        except ValueError as e:
+            return jsonify({'status': 'error', 'message': str(e)}), 400
+    else:
+        return jsonify({'status': 'error', 'message': 'Provide account_id or set apply_to_all'}), 400
 
 @app.route('/api/start', methods=['POST'])
 def start_bot():
-    if not bot.api_token:
-        return jsonify({'status': 'error', 'message': 'API Token missing'}), 400
-    bot.start_bot()
-    return jsonify({'status': 'success', 'message': 'Bot started'})
+    data = request.json
+    account_id = data.get('account_id')
+    start_all = data.get('start_all', False)
+
+    if start_all:
+        for bot in manager.bots.values():
+            if not bot.is_running:
+                bot.start_bot()
+        return jsonify({'status': 'success', 'message': 'All bots started'})
+    elif account_id:
+        try:
+            bot = manager.get_account(account_id)
+            bot.start_bot()
+            return jsonify({'status': 'success', 'message': f'{account_id} started'})
+        except ValueError as e:
+            return jsonify({'status': 'error', 'message': str(e)}), 400
+    else:
+        return jsonify({'status': 'error', 'message': 'Provide account_id or start_all'}), 400
 
 @app.route('/api/stop', methods=['POST'])
 def stop_bot():
-    bot.stop_bot()
-    return jsonify({'status': 'success', 'message': 'Bot stopped'})
+    data = request.json
+    account_id = data.get('account_id')
+    stop_all = data.get('stop_all', False)
+
+    if stop_all:
+        for bot in manager.bots.values():
+            if bot.is_running:
+                bot.stop_bot()
+        return jsonify({'status': 'success', 'message': 'All bots stopped'})
+    elif account_id:
+        try:
+            bot = manager.get_account(account_id)
+            bot.stop_bot()
+            return jsonify({'status': 'success', 'message': f'{account_id} stopped'})
+        except ValueError as e:
+            return jsonify({'status': 'error', 'message': str(e)}), 400
+    else:
+        return jsonify({'status': 'error', 'message': 'Provide account_id or stop_all'}), 400
 
 @app.route('/api/reset', methods=['POST'])
 def reset_bot():
-    bot.reset_stats()
-    return jsonify({'status': 'success', 'message': 'Stats reset'})
+    data = request.json
+    account_id = data.get('account_id')
+    try:
+        bot = manager.get_account(account_id)
+        bot.reset_stats()
+        return jsonify({'status': 'success', 'message': f'{account_id} stats reset'})
+    except ValueError as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 400
 
 @app.route('/api/export_logs')
 def export_logs():
+    account_id = request.args.get('account_id')
+    try:
+        bot = manager.get_account(account_id)
+    except ValueError:
+        return "Account not found", 404
+
     si = io.StringIO()
     cw = csv.writer(si)
-    # Header
     cw.writerow(["Contract ID", "Type", "Entry Time", "Entry Quote", "Entry Digit", "Exit Time", "Exit Quote", "Exit Digit", "Status", "Profit"])
     
-    # Rows
     for trade in bot.trade_history:
         cw.writerow([
             trade.get("Contract ID"),
@@ -125,10 +175,9 @@ def export_logs():
         ])
         
     output = make_response(si.getvalue())
-    output.headers["Content-Disposition"] = "attachment; filename=trading_logs.csv"
+    output.headers["Content-Disposition"] = f"attachment; filename=trading_logs_{account_id}.csv"
     output.headers["Content-type"] = "text/csv"
     return output
 
 if __name__ == '__main__':
-    # Threaded mode is essential for the bot background thread to work alongside Flask dev server
     app.run(debug=True, host='0.0.0.0', port=5001, threaded=True, use_reloader=False)

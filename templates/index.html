@@ -6,58 +6,62 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Antigravity Deriv Bot</title>
     <link rel="icon" type="image/png" href="/static/favicon.png">
+    <link rel="manifest" href="/static/manifest.json">
+    <meta name="theme-color" content="#238636">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/style.css">
 </head>
 
 <body>
     <div class="container">
+        <!-- Header -->
         <header>
             <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
                 <h1>Royal Mint Cloud</h1>
                 <div style="text-align: right;">
-                    <p style="margin: 0;">Status: <span id="status-text" class="status-stopped">Stopped</span></p>
-                    <p style="margin: 5px 0 0 0; font-size: 0.9rem;">Runtime: <span id="runtime"
-                            style="font-family: monospace; color: #fff;">00:00:00</span></p>
+                    <p style="margin: 0;">Active: <span id="active-count" class="status-running">0</span> / <span id="total-accounts">0</span></p>
                 </div>
             </div>
         </header>
 
+        <!-- Aggregated Stats -->
         <div class="stats-grid">
             <div class="card">
-                <h3>Profit/Loss</h3>
-                <div id="profit" class="value" style="color: #da3633;">0.00</div>
+                <h3>Total Net P/L</h3>
+                <div id="total-profit" class="value" style="color: #da3633;">0.00</div>
             </div>
             <div class="card">
-                <h3>Balance</h3>
-                <div id="balance" class="value">Loading...</div>
-            </div>
-            <div class="card">
-                <h3>Wins</h3>
-                <div id="wins" class="value" style="color: #238636;">0</div>
-            </div>
-            <div class="card">
-                <h3>Losses</h3>
-                <div id="losses" class="value" style="color: #da3633;">0</div>
-            </div>
-        </div>
-
-        <!-- Current Digit Display -->
-        <div class="card tick-stream-panel" style="margin-bottom: 20px; text-align: center;">
-            <h3>Current Last Digit</h3>
-            <div id="digit-display"
-                style="font-size: 72px; font-weight: 700; color: var(--accent); transition: color 0.1s;">
-                -
-            </div>
-        </div>
-
-        <div class="main-content">
-            <div class="card settings-panel">
-                <h2>Configuration</h2>
-                <div class="form-group">
-                    <label>API Token</label>
-                    <input type="password" id="token" placeholder="Enter Deriv API Token">
+                <h3>Current Last Digit</h3>
+                <div id="digit-display"
+                    style="font-size: 48px; font-weight: 700; color: var(--accent); transition: color 0.1s;">
+                    -
                 </div>
+            </div>
+        </div>
+
+        <!-- Add Account Bar -->
+        <div class="card" style="margin-bottom: 20px;">
+            <h3>Add Account</h3>
+            <div style="display: flex; gap: 10px;">
+                <input type="password" id="new-token" placeholder="Paste Deriv API Token" style="flex: 1;">
+                <button id="add-account-btn" onclick="addAccount()" style="width: auto; margin-top: 0; padding: 10px 20px;">+ Add</button>
+            </div>
+            <small>Each token creates an independent trading bot instance.</small>
+        </div>
+
+        <!-- Account Cards Grid -->
+        <div id="accounts-grid" class="accounts-grid">
+            <div class="card" style="text-align: center; padding: 40px; color: var(--text-secondary);">
+                No accounts added yet. Paste a Deriv API token above to get started.
+            </div>
+        </div>
+
+        <!-- Main Content: Settings + Logs -->
+        <div class="main-content" id="main-content" style="display: none;">
+            <div class="card settings-panel">
+                <h2>Settings <span id="settings-account-label" style="font-size: 14px; color: var(--text-secondary);"></span></h2>
                 <div class="form-group">
                     <label>Market</label>
                     <select id="market">
@@ -89,10 +93,10 @@
                         <div class="form-group">
                             <label>Prediction Digit (Over X)</label>
                             <input type="number" id="prediction" value="0" min="0" max="8">
-                            <small>Trades trigger if digit > X</small>
+                            <small>Trades trigger if digit &gt; X</small>
                         </div>
                         <div class="form-group">
-                            <label for="smart-mode">Smart Strategy (0 & 9):</label>
+                            <label for="smart-mode">Smart Strategy (0 &amp; 9):</label>
                             <div style="display: flex; align-items: center;">
                                 <input type="checkbox" id="smart-mode"
                                     style="width: 20px; height: 20px; margin-right: 10px;">
@@ -161,31 +165,35 @@
                                 <small>Safety cap</small>
                             </div>
                         </div>
-                        <div style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 10px;">
-                            Current stake: <span id="current-stake" style="color: var(--accent); font-weight: 600;">$0.35</span>
-                            &nbsp;|&nbsp; Seq P/L: <span id="martingale-pl" style="font-weight: 600;">$0.00</span>
-                        </div>
                     </div>
                 </div>
                 <div class="actions">
-                    <button id="save-btn" onclick="saveSettings()">Save Settings</button>
-                    <button id="start-btn" onclick="startBot()">Start Bot</button>
-                    <button id="stop-btn" onclick="stopBot()" class="danger">Stop Bot</button>
-                    <button id="reset-btn" onclick="resetStats()" class="warning">Reset Stats</button>
-                    <button id="export-btn" onclick="exportLogs()" class="secondary">Export CSV</button>
+                    <button id="save-btn" onclick="saveSettings()">Save to Selected</button>
+                    <button id="apply-all-btn" onclick="applyToAll()" class="secondary">Apply to All Accounts</button>
                 </div>
             </div>
 
             <div class="card logs-panel">
-                <h2>Live Logs</h2>
+                <h2>Live Logs <span id="logs-account-label" style="font-size: 14px; color: var(--text-secondary);"></span></h2>
                 <div id="logs" class="log-container">
-                    <div class="log-entry">Waiting for connection...</div>
+                    <div class="log-entry">Select an account to view logs...</div>
+                </div>
+                <div class="actions">
+                    <button id="export-btn" onclick="exportLogs()" class="secondary">Export CSV</button>
+                    <button id="reset-btn" onclick="resetStats()" class="warning">Reset Stats</button>
                 </div>
             </div>
         </div>
     </div>
 
     <script src="/static/script.js"></script>
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/static/sw.js')
+                .then(reg => console.log('SW registered'))
+                .catch(err => console.log('SW failed:', err));
+        }
+    </script>
 </body>
 
 </html>

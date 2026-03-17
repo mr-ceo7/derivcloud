@@ -1,109 +1,273 @@
+// ── State ──────────────────────────────────────────────────
+let selectedAccountId = null;
+
+// ── Polling ───────────────────────────────────────────────
 function updateStats() {
     fetch('/api/status')
         .then(res => res.json())
         .then(data => {
-            // Update Status Text
-            const statusText = document.getElementById('status-text');
-            if (statusText) {
-                statusText.textContent = data.is_running ? "Running" : "Stopped";
-                statusText.className = data.is_running ? "status-running" : "status-stopped";
+            // Aggregated header
+            document.getElementById('total-profit').textContent = data.total_profit.toFixed(2);
+            document.getElementById('total-profit').style.color = data.total_profit >= 0 ? '#238636' : '#da3633';
+            document.getElementById('active-count').textContent = data.active_count;
+            document.getElementById('total-accounts').textContent = data.total_accounts;
+
+            // Render account cards
+            renderAccountCards(data.accounts);
+
+            // Update selected account's logs and digit
+            if (selectedAccountId) {
+                const acct = data.accounts.find(a => a.account_id === selectedAccountId);
+                if (acct) {
+                    // Logs
+                    const logContainer = document.getElementById('logs');
+                    logContainer.innerHTML = acct.logs.map(log => `<div class="log-entry">${log}</div>`).join('');
+
+                    // Digit display
+                    const digitDisplay = document.getElementById('digit-display');
+                    if (acct.current_digit !== null) {
+                        digitDisplay.innerText = acct.current_digit;
+                    }
+                }
             }
+        })
+        .catch(err => console.error('Status poll error:', err));
+}
 
-            document.getElementById('runtime').textContent = data.running_time || "00:00:00";
-            document.getElementById('balance').textContent = data.balance ? data.balance.toFixed(2) : "---";
-            document.getElementById('profit').textContent = data.profit.toFixed(2);
-            document.getElementById('profit').style.color = data.profit >= 0 ? '#238636' : '#da3633';
-            document.getElementById('wins').innerText = data.wins;
-            document.getElementById('losses').innerText = data.losses;
+// ── Render Account Cards ──────────────────────────────────
+function renderAccountCards(accounts) {
+    const grid = document.getElementById('accounts-grid');
+    const mainContent = document.getElementById('main-content');
 
-            // Update Current Digit
-            const digitDisplay = document.getElementById('digit-display');
-            if (data.current_digit !== null) {
-                digitDisplay.innerText = data.current_digit;
-                // Simple animation/color feedback?
-                // For now just plain text update.
-            }
+    if (accounts.length === 0) {
+        grid.innerHTML = '<div class="card" style="text-align: center; padding: 40px; color: var(--text-secondary);">No accounts added yet. Paste a Deriv API token above to get started.</div>';
+        mainContent.style.display = 'none';
+        return;
+    }
 
-            // Update Martingale live display
-            const currentStakeEl = document.getElementById('current-stake');
-            const martingalePlEl = document.getElementById('martingale-pl');
-            if (currentStakeEl && data.settings) {
-                currentStakeEl.textContent = '$' + data.settings.current_stake.toFixed(2);
-                const mpl = data.settings.martingale_profit;
-                martingalePlEl.textContent = '$' + mpl.toFixed(2);
-                martingalePlEl.style.color = mpl >= 0 ? '#238636' : '#da3633';
-            }
+    mainContent.style.display = '';
 
-            // Update Buttons
-            if (data.is_running) {
-                document.getElementById('start-btn').disabled = true;
-                document.getElementById('stop-btn').disabled = false;
-                document.getElementById('save-btn').disabled = true;
+    // Auto-select if no selection exists
+    if (!selectedAccountId && accounts.length > 0) {
+        selectAccount(accounts[0].account_id, accounts[0]);
+    }
+
+    let html = '';
+    for (const acct of accounts) {
+        const isSelected = acct.account_id === selectedAccountId;
+        const isRunning = acct.is_running;
+        let classes = 'account-card';
+        if (isSelected) classes += ' selected';
+        if (isRunning) classes += ' running';
+
+        const profitColor = acct.profit >= 0 ? '#238636' : '#da3633';
+        const profitSign = acct.profit >= 0 ? '+' : '';
+
+        html += `
+        <div class="${classes}" onclick="selectAccount('${acct.account_id}')">
+            <div class="account-id">${acct.account_id}</div>
+            <div class="account-balance">${acct.balance.toFixed(2)} <span style="font-size: 14px; color: var(--text-secondary);">${acct.currency}</span></div>
+            <div class="account-profit" style="color: ${profitColor};">${profitSign}${acct.profit.toFixed(2)} P/L</div>
+            <div class="account-stats">W: ${acct.wins} | L: ${acct.losses} | ${acct.running_time}</div>
+            <div class="account-actions" onclick="event.stopPropagation();">
+                <button class="btn-start" onclick="startAccount('${acct.account_id}')" ${isRunning ? 'disabled' : ''}>▶</button>
+                <button class="btn-stop" onclick="stopAccount('${acct.account_id}')" ${!isRunning ? 'disabled' : ''}>⏹</button>
+                <button class="btn-remove" onclick="removeAccount('${acct.account_id}')">✕</button>
+            </div>
+        </div>`;
+    }
+    grid.innerHTML = html;
+}
+
+// ── Select Account ────────────────────────────────────────
+function selectAccount(accountId, acctData) {
+    selectedAccountId = accountId;
+    document.getElementById('settings-account-label').textContent = `(${accountId})`;
+    document.getElementById('logs-account-label').textContent = `(${accountId})`;
+
+    // Load settings into form if we have the data
+    if (acctData && acctData.settings) {
+        loadSettingsToForm(acctData.settings);
+    } else {
+        // Fetch fresh data
+        fetch('/api/status')
+            .then(res => res.json())
+            .then(data => {
+                const acct = data.accounts.find(a => a.account_id === accountId);
+                if (acct) loadSettingsToForm(acct.settings);
+            });
+    }
+}
+
+function loadSettingsToForm(settings) {
+    document.getElementById('market').value = settings.market;
+    document.getElementById('stake').value = settings.stake;
+    document.getElementById('duration').value = settings.duration;
+    document.getElementById('prediction').value = settings.prediction;
+    document.getElementById('consecutive').value = settings.consecutive;
+    document.getElementById('smart-mode').checked = settings.smart_mode;
+    document.getElementById('strategy').value = settings.strategy;
+    document.getElementById('range-barrier').value = settings.range_barrier;
+    document.getElementById('range-direction').value = settings.range_direction;
+    document.getElementById('martingale-enabled').checked = settings.martingale_enabled;
+    document.getElementById('martingale-mode').value = settings.martingale_mode;
+    document.getElementById('martingale-multiplier').value = settings.martingale_multiplier;
+    document.getElementById('martingale-increment').value = settings.martingale_increment;
+    document.getElementById('martingale-max-stake').value = settings.martingale_max_stake;
+    toggleStrategySettings();
+    toggleMartingaleSettings();
+    toggleMartingaleMode();
+}
+
+// ── Add / Remove Account ──────────────────────────────────
+function addAccount() {
+    const token = document.getElementById('new-token').value.trim();
+    if (!token) return alert('Please paste a Deriv API token.');
+
+    const btn = document.getElementById('add-account-btn');
+    btn.disabled = true;
+    btn.innerText = 'Adding...';
+
+    fetch('/api/add_account', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token })
+    })
+        .then(res => res.json())
+        .then(data => {
+            if (data.status === 'error') {
+                alert(data.message);
             } else {
-                document.getElementById('start-btn').disabled = false;
-                document.getElementById('stop-btn').disabled = true;
-                document.getElementById('save-btn').disabled = false;
+                document.getElementById('new-token').value = '';
+                selectedAccountId = data.account_id;
+                updateStats();
             }
-
-            // Sync Settings if not editing (optional - maybe annoying if user is typing, so skipping for now)
-            // But we should load them on first load.
-
-            // Update Logs
-            const logContainer = document.getElementById('logs');
-            logContainer.innerHTML = data.logs.map(log => `<div class="log-entry">${log}</div>`).join('');
+        })
+        .catch(err => alert('Error adding account: ' + err))
+        .finally(() => {
+            btn.disabled = false;
+            btn.innerText = '+ Add';
         });
 }
 
+function removeAccount(accountId) {
+    if (!confirm(`Remove account ${accountId}? This will stop any running bot.`)) return;
+
+    fetch('/api/remove_account', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account_id: accountId })
+    })
+        .then(res => res.json())
+        .then(data => {
+            if (data.status === 'error') alert(data.message);
+            if (selectedAccountId === accountId) selectedAccountId = null;
+            updateStats();
+        });
+}
+
+// ── Save Settings ─────────────────────────────────────────
+function getSettingsPayload() {
+    return {
+        market: document.getElementById('market').value,
+        stake: document.getElementById('stake').value,
+        duration: document.getElementById('duration').value,
+        prediction: document.getElementById('prediction').value,
+        consecutive: document.getElementById('consecutive').value,
+        smart_mode: document.getElementById('smart-mode').checked,
+        strategy: document.getElementById('strategy').value,
+        range_barrier: document.getElementById('range-barrier').value,
+        range_direction: document.getElementById('range-direction').value,
+        martingale_enabled: document.getElementById('martingale-enabled').checked,
+        martingale_mode: document.getElementById('martingale-mode').value,
+        martingale_multiplier: document.getElementById('martingale-multiplier').value,
+        martingale_increment: document.getElementById('martingale-increment').value,
+        martingale_max_stake: document.getElementById('martingale-max-stake').value,
+    };
+}
+
 function saveSettings() {
-    const token = document.getElementById('token').value;
-    const market = document.getElementById('market').value;
-    const stake = document.getElementById('stake').value;
-    const duration = document.getElementById('duration').value;
-    const prediction = document.getElementById('prediction').value;
-    const consecutive = document.getElementById('consecutive').value;
-    const smartMode = document.getElementById('smart-mode').checked;
-    const strategy = document.getElementById('strategy').value;
-    const rangeBarrier = document.getElementById('range-barrier').value;
-    const rangeDirection = document.getElementById('range-direction').value;
-    const martingaleEnabled = document.getElementById('martingale-enabled').checked;
-    const martingaleMode = document.getElementById('martingale-mode').value;
-    const martingaleMultiplier = document.getElementById('martingale-multiplier').value;
-    const martingaleIncrement = document.getElementById('martingale-increment').value;
-    const martingaleMaxStake = document.getElementById('martingale-max-stake').value;
+    if (!selectedAccountId) return alert('Select an account first.');
+    const payload = getSettingsPayload();
+    payload.account_id = selectedAccountId;
 
     fetch('/api/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            token, market, stake, duration, prediction, consecutive,
-            smart_mode: smartMode, strategy,
-            range_barrier: rangeBarrier, range_direction: rangeDirection,
-            martingale_enabled: martingaleEnabled,
-            martingale_mode: martingaleMode,
-            martingale_multiplier: martingaleMultiplier,
-            martingale_increment: martingaleIncrement,
-            martingale_max_stake: martingaleMaxStake
-        })
+        body: JSON.stringify(payload)
     })
         .then(res => res.json())
         .then(data => {
             const btn = document.getElementById('save-btn');
-            const originalText = btn.innerText;
+            const original = btn.innerText;
             btn.innerText = '✓ Saved!';
-            btn.style.background = '#238636';
-            btn.style.color = 'white';
-            setTimeout(() => {
-                btn.innerText = originalText;
-                btn.style.background = '';
-                btn.style.color = '';
-            }, 2000);
+            setTimeout(() => { btn.innerText = original; }, 2000);
         })
-        .catch(err => {
-            console.error("Save error:", err);
-            alert("Error saving settings.");
+        .catch(err => alert('Error saving: ' + err));
+}
+
+function applyToAll() {
+    const payload = getSettingsPayload();
+    payload.apply_to_all = true;
+
+    fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    })
+        .then(res => res.json())
+        .then(data => {
+            const btn = document.getElementById('apply-all-btn');
+            const original = btn.innerText;
+            btn.innerText = '✓ Applied!';
+            setTimeout(() => { btn.innerText = original; }, 2000);
+        })
+        .catch(err => alert('Error: ' + err));
+}
+
+// ── Start / Stop ──────────────────────────────────────────
+function startAccount(accountId) {
+    fetch('/api/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account_id: accountId })
+    })
+        .then(res => res.json())
+        .then(data => {
+            if (data.status === 'error') alert(data.message);
+            updateStats();
         });
 }
 
+function stopAccount(accountId) {
+    fetch('/api/stop', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account_id: accountId })
+    })
+        .then(res => res.json())
+        .then(data => updateStats());
+}
+
+// ── Reset / Export ────────────────────────────────────────
+function resetStats() {
+    if (!selectedAccountId) return alert('Select an account first.');
+    if (!confirm(`Reset stats for ${selectedAccountId}?`)) return;
+    fetch('/api/reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account_id: selectedAccountId })
+    })
+        .then(res => res.json())
+        .then(data => updateStats());
+}
+
+function exportLogs() {
+    if (!selectedAccountId) return alert('Select an account first.');
+    window.location.href = `/api/export_logs?account_id=${selectedAccountId}`;
+}
+
+// ── Strategy / Martingale Toggles ─────────────────────────
 function toggleStrategySettings() {
     const strategy = document.getElementById('strategy').value;
     const digitSettings = document.getElementById('digit-streak-settings');
@@ -131,69 +295,15 @@ function toggleMartingaleMode() {
     const mode = document.getElementById('martingale-mode').value;
     const multGroup = document.getElementById('martingale-multiplier-group');
     const addGroup = document.getElementById('martingale-increment-group');
-    
-    // Hide both by default
     multGroup.classList.add('hidden');
     addGroup.classList.add('hidden');
-    
     if (mode === 'multiply') {
         multGroup.classList.remove('hidden');
     } else if (mode === 'additive') {
         addGroup.classList.remove('hidden');
     }
-    // exact_recovery requires neither, so both stay hidden
 }
 
-function startBot() {
-    fetch('/api/start', { method: 'POST' })
-        .then(res => res.json())
-        .then(data => {
-            if (data.status === 'error') alert(data.message);
-            updateStats();
-        });
-}
-
-function stopBot() {
-    fetch('/api/stop', { method: 'POST' });
-}
-
-function resetStats() {
-    if (confirm("Are you sure you want to reset all profit/loss stats?")) {
-        fetch('/api/reset', { method: 'POST' })
-            .then(res => res.json())
-            .then(data => {
-                alert(data.message);
-                updateStats();
-            });
-    }
-}
-
-function exportLogs() {
-    window.location.href = '/api/export_logs';
-}
-
-// Initial Settings Load
-fetch('/api/status').then(res => res.json()).then(data => {
-    document.getElementById('market').value = data.settings.market;
-    document.getElementById('stake').value = data.settings.stake;
-    document.getElementById('duration').value = data.settings.duration;
-    document.getElementById('prediction').value = data.settings.prediction;
-    document.getElementById('consecutive').value = data.settings.consecutive;
-    document.getElementById('smart-mode').checked = data.settings.smart_mode;
-    document.getElementById('strategy').value = data.settings.strategy;
-    document.getElementById('range-barrier').value = data.settings.range_barrier;
-    document.getElementById('range-direction').value = data.settings.range_direction;
-    document.getElementById('martingale-enabled').checked = data.settings.martingale_enabled;
-    document.getElementById('martingale-mode').value = data.settings.martingale_mode;
-    document.getElementById('martingale-multiplier').value = data.settings.martingale_multiplier;
-    document.getElementById('martingale-increment').value = data.settings.martingale_increment;
-    document.getElementById('martingale-max-stake').value = data.settings.martingale_max_stake;
-    toggleStrategySettings();
-    toggleMartingaleSettings();
-    toggleMartingaleMode();
-
-    updateStats();
-});
-
-// Poll every 1s
+// ── Init ──────────────────────────────────────────────────
+updateStats();
 setInterval(updateStats, 1000);

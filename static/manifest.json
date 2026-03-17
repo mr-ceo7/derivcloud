@@ -1,0 +1,17 @@
+{
+    "name": "Royal Mint Cloud",
+    "short_name": "RMC Bot",
+    "description": "Automated Deriv trading bot with multi-account support",
+    "start_url": "/",
+    "display": "standalone",
+    "background_color": "#0e1117",
+    "theme_color": "#238636",
+    "icons": [
+        {
+            "src": "/static/favicon.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any maskable"
+        }
+    ]
+}

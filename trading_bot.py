@@ -44,6 +44,7 @@ class TradingBot:
         self.thread = None
         self.currency = "USD"
         self.current_balance = 0.0
+        self.account_id = None
         
         # Stats
         self.total_profit = 0.0
@@ -426,4 +427,120 @@ class TradingBot:
             self.stake = round(self.stake, 2)
             self.log(f"📈 Martingale: Stake adjusted to {self.stake} (seq P/L: {round(self.martingale_profit, 2)})")
 
-bot = TradingBot()
+
+class BotManager:
+    """Manages multiple TradingBot instances, one per Deriv account."""
+
+    def __init__(self):
+        self.bots = {}  # account_id -> TradingBot
+
+    def add_account(self, token):
+        """Create a new TradingBot for the given token.
+        
+        We do a quick async authorize call to get the account_id and balance,
+        then store the bot keyed by account_id.
+        Returns (account_id, balance, currency) or raises an error.
+        """
+        async def _authorize(token):
+            uri = "wss://ws.binaryws.com/websockets/v3?app_id=1089"
+            async with websockets.connect(uri) as ws:
+                await ws.send(json.dumps({"authorize": token}))
+                res = json.loads(await ws.recv())
+                if 'error' in res:
+                    raise ValueError(res['error']['message'])
+                return res['authorize']
+
+        loop = asyncio.new_event_loop()
+        try:
+            auth = loop.run_until_complete(_authorize(token))
+        finally:
+            loop.close()
+
+        account_id = auth['loginid']
+        balance = auth['balance']
+        currency = auth['currency']
+
+        if account_id in self.bots:
+            raise ValueError(f"Account {account_id} is already added.")
+
+        bot = TradingBot()
+        bot.api_token = token
+        bot.current_balance = balance
+        bot.currency = currency
+        bot.account_id = account_id
+        self.bots[account_id] = bot
+        bot.log(f"Account {account_id} added. Balance: {balance} {currency}")
+        return account_id, balance, currency
+
+    def remove_account(self, account_id):
+        """Stop and remove a bot by account_id."""
+        if account_id not in self.bots:
+            raise ValueError(f"Account {account_id} not found.")
+        bot = self.bots[account_id]
+        if bot.is_running:
+            bot.stop_bot()
+        del self.bots[account_id]
+
+    def get_account(self, account_id):
+        """Get a specific bot instance."""
+        if account_id not in self.bots:
+            raise ValueError(f"Account {account_id} not found.")
+        return self.bots[account_id]
+
+    def get_all_statuses(self):
+        """Return a list of status dicts for every bot."""
+        statuses = []
+        for account_id, bot in self.bots.items():
+            runtime = "00:00:00"
+            if bot.is_running and bot.start_time:
+                delta = datetime.now() - bot.start_time
+                seconds = int(delta.total_seconds())
+                h = seconds // 3600
+                m = (seconds % 3600) // 60
+                s = seconds % 60
+                runtime = f"{h:02d}:{m:02d}:{s:02d}"
+
+            statuses.append({
+                'account_id': account_id,
+                'is_running': bot.is_running,
+                'running_time': runtime,
+                'balance': bot.current_balance,
+                'currency': bot.currency,
+                'profit': round(bot.total_profit, 2),
+                'wins': bot.wins,
+                'losses': bot.losses,
+                'total_trades': bot.total_trades,
+                'logs': bot.logs,
+                'current_digit': bot.current_digit,
+                'settings': {
+                    'market': bot.market,
+                    'stake': bot.base_stake,
+                    'duration': bot.duration,
+                    'prediction': bot.prediction_digit,
+                    'consecutive': bot.consecutive_triggers,
+                    'smart_mode': bot.smart_mode,
+                    'token_set': bot.api_token != "YOUR_API_TOKEN",
+                    'strategy': bot.strategy,
+                    'range_barrier': bot.range_barrier,
+                    'range_direction': bot.range_direction,
+                    'martingale_enabled': bot.martingale_enabled,
+                    'martingale_mode': bot.martingale_mode,
+                    'martingale_multiplier': bot.martingale_multiplier,
+                    'martingale_increment': bot.martingale_increment,
+                    'martingale_max_stake': bot.martingale_max_stake,
+                    'current_stake': bot.stake,
+                    'martingale_profit': round(bot.martingale_profit, 2)
+                }
+            })
+        return statuses
+
+    def total_profit(self):
+        """Sum of profits across all bots."""
+        return round(sum(b.total_profit for b in self.bots.values()), 2)
+
+    def active_count(self):
+        """Number of currently running bots."""
+        return sum(1 for b in self.bots.values() if b.is_running)
+
+
+manager = BotManager()
