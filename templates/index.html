@@ -92,6 +92,7 @@
                     <select id="strategy" onchange="toggleStrategySettings()">
                         <option value="digit_streak" selected>Digit Streak</option>
                         <option value="range_threshold">Range Threshold</option>
+                        <option value="trio_coverage">Trio Coverage (Digit 5 Hedge)</option>
                     </select>
                 </div>
                 <div id="digit-streak-settings">
@@ -126,6 +127,27 @@
                                 <option value="above">Above → Trade UNDER</option>
                             </select>
                             <small>When digits stay below/above barrier</small>
+                        </div>
+                    </div>
+                </div>
+                <div id="trio-coverage-settings" class="hidden">
+                    <div class="row">
+                        <div class="form-group">
+                            <label>Trio Role</label>
+                            <select id="trio-role">
+                                <option value="over_5" selected>Over 5 (DIGITOVER)</option>
+                                <option value="under_5">Under 5 (DIGITUNDER)</option>
+                                <option value="match_5">Match 5 (DIGITMATCH)</option>
+                            </select>
+                            <small>Each bot needs a different role</small>
+                        </div>
+                        <div class="form-group">
+                            <label>Trigger Mode</label>
+                            <select id="trio-trigger">
+                                <option value="every_tick" selected>Every Tick</option>
+                                <option value="on_digit_5">Only When Digit = 5</option>
+                            </select>
+                            <small>When to place the trade</small>
                         </div>
                     </div>
                 </div>

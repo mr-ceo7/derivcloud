@@ -79,6 +79,8 @@ def update_settings():
         'martingale_multiplier': data.get('martingale_multiplier'),
         'martingale_increment': data.get('martingale_increment'),
         'martingale_max_stake': data.get('martingale_max_stake'),
+        'trio_role': data.get('trio_role'),
+        'trio_trigger': data.get('trio_trigger'),
     }
 
     if apply_to_all:

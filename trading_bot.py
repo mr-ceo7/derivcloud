@@ -9,7 +9,8 @@ class TradingBot:
     # Net Profit Multipliers for $1 stake (approximate, based on probability - margin)
     PAYOUT_MULTIPLIERS = {
         "DIGITOVER": {0: 0.09, 1: 0.23, 2: 0.40, 3: 0.64, 4: 0.96, 5: 1.43, 6: 2.21, 7: 3.86, 8: 7.93},
-        "DIGITUNDER": {1: 7.93, 2: 3.86, 3: 2.21, 4: 1.43, 5: 0.96, 6: 0.64, 7: 0.40, 8: 0.23, 9: 0.09}
+        "DIGITUNDER": {1: 7.93, 2: 3.86, 3: 2.21, 4: 1.43, 5: 0.96, 6: 0.64, 7: 0.40, 8: 0.23, 9: 0.09},
+        "DIGITMATCH": {0: 8.50, 1: 8.50, 2: 8.50, 3: 8.50, 4: 8.50, 5: 8.50, 6: 8.50, 7: 8.50, 8: 8.50, 9: 8.50}
     }
 
     def __init__(self):
@@ -21,13 +22,17 @@ class TradingBot:
         self.consecutive_triggers = 1
         self.smart_mode = False # Trade both 0 and 9
         
-        # Strategy selection: "digit_streak" or "range_threshold"
+        # Strategy selection: "digit_streak", "range_threshold", or "trio_coverage"
         self.strategy = "digit_streak"
         
         # Range Threshold settings
         self.range_barrier = 5
         self.range_direction = "below"  # "below" or "above"
         self.range_consecutive_counter = 0
+        
+        # Trio Coverage settings
+        self.trio_role = "over_5"    # "over_5", "under_5", "match_5"
+        self.trio_trigger = "every_tick"  # "every_tick" or "on_digit_5"
         
         # Martingale Recovery settings
         self.martingale_enabled = False
@@ -70,7 +75,7 @@ class TradingBot:
         if len(self.logs) > 50:
             self.logs.pop()
 
-    def update_settings(self, token=None, market=None, stake=None, duration=None, prediction=None, consecutive=None, smart_mode=None, strategy=None, range_barrier=None, range_direction=None, martingale_enabled=None, martingale_mode=None, martingale_multiplier=None, martingale_increment=None, martingale_max_stake=None):
+    def update_settings(self, token=None, market=None, stake=None, duration=None, prediction=None, consecutive=None, smart_mode=None, strategy=None, range_barrier=None, range_direction=None, martingale_enabled=None, martingale_mode=None, martingale_multiplier=None, martingale_increment=None, martingale_max_stake=None, trio_role=None, trio_trigger=None):
         if token: self.api_token = token
         if market: self.market = market
         if stake:
@@ -88,6 +93,8 @@ class TradingBot:
         if martingale_multiplier is not None: self.martingale_multiplier = float(martingale_multiplier)
         if martingale_increment is not None: self.martingale_increment = float(martingale_increment)
         if martingale_max_stake is not None: self.martingale_max_stake = float(martingale_max_stake)
+        if trio_role: self.trio_role = trio_role
+        if trio_trigger: self.trio_trigger = trio_trigger
         self.log(f"Settings updated: Strategy={self.strategy}, Stake={self.stake}, Martingale={'ON' if self.martingale_enabled else 'OFF'}")
 
     def reset_stats(self):
@@ -265,6 +272,26 @@ class TradingBot:
                         trigger_met = True
                         contract_type = "DIGITUNDER"
                         barrier = self.range_barrier
+
+            elif self.strategy == "trio_coverage":
+                # ── STRATEGY 3: Trio Coverage (Digit 5 Hedge) ──
+                should_trigger = False
+                if self.trio_trigger == "every_tick":
+                    should_trigger = True
+                elif self.trio_trigger == "on_digit_5" and last_digit == 5:
+                    should_trigger = True
+                
+                if should_trigger:
+                    trigger_met = True
+                    if self.trio_role == "over_5":
+                        contract_type = "DIGITOVER"
+                        barrier = 5
+                    elif self.trio_role == "under_5":
+                        contract_type = "DIGITUNDER"
+                        barrier = 5
+                    elif self.trio_role == "match_5":
+                        contract_type = "DIGITMATCH"
+                        barrier = 5
 
             if trigger_met and not self.waiting_for_result:
                 
@@ -529,7 +556,9 @@ class BotManager:
                     'martingale_increment': bot.martingale_increment,
                     'martingale_max_stake': bot.martingale_max_stake,
                     'current_stake': bot.stake,
-                    'martingale_profit': round(bot.martingale_profit, 2)
+                    'martingale_profit': round(bot.martingale_profit, 2),
+                    'trio_role': bot.trio_role,
+                    'trio_trigger': bot.trio_trigger
                 }
             })
         return statuses

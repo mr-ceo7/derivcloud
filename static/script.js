@@ -115,6 +115,8 @@ function loadSettingsToForm(settings) {
     document.getElementById('martingale-multiplier').value = settings.martingale_multiplier;
     document.getElementById('martingale-increment').value = settings.martingale_increment;
     document.getElementById('martingale-max-stake').value = settings.martingale_max_stake;
+    if (settings.trio_role) document.getElementById('trio-role').value = settings.trio_role;
+    if (settings.trio_trigger) document.getElementById('trio-trigger').value = settings.trio_trigger;
     toggleStrategySettings();
     toggleMartingaleSettings();
     toggleMartingaleMode();
@@ -184,6 +186,8 @@ function getSettingsPayload() {
         martingale_multiplier: document.getElementById('martingale-multiplier').value,
         martingale_increment: document.getElementById('martingale-increment').value,
         martingale_max_stake: document.getElementById('martingale-max-stake').value,
+        trio_role: document.getElementById('trio-role').value,
+        trio_trigger: document.getElementById('trio-trigger').value,
     };
 }
 
@@ -297,12 +301,16 @@ function toggleStrategySettings() {
     const strategy = document.getElementById('strategy').value;
     const digitSettings = document.getElementById('digit-streak-settings');
     const rangeSettings = document.getElementById('range-threshold-settings');
+    const trioSettings = document.getElementById('trio-coverage-settings');
+    digitSettings.classList.add('hidden');
+    rangeSettings.classList.add('hidden');
+    trioSettings.classList.add('hidden');
     if (strategy === 'digit_streak') {
         digitSettings.classList.remove('hidden');
-        rangeSettings.classList.add('hidden');
-    } else {
-        digitSettings.classList.add('hidden');
+    } else if (strategy === 'range_threshold') {
         rangeSettings.classList.remove('hidden');
+    } else if (strategy === 'trio_coverage') {
+        trioSettings.classList.remove('hidden');
     }
 }
 
