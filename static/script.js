@@ -104,7 +104,22 @@ function saveSettings() {
         })
     })
         .then(res => res.json())
-        .then(data => alert(data.message));
+        .then(data => {
+            const btn = document.getElementById('save-btn');
+            const originalText = btn.innerText;
+            btn.innerText = '✓ Saved!';
+            btn.style.background = '#238636';
+            btn.style.color = 'white';
+            setTimeout(() => {
+                btn.innerText = originalText;
+                btn.style.background = '';
+                btn.style.color = '';
+            }, 2000);
+        })
+        .catch(err => {
+            console.error("Save error:", err);
+            alert("Error saving settings.");
+        });
 }
 
 function toggleStrategySettings() {

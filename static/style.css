@@ -101,7 +101,19 @@ button {
     font-weight: 600;
     cursor: pointer;
     margin-top: 10px;
-    transition: opacity 0.2s;
+    transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+button:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    filter: brightness(1.1);
+}
+
+button:active:not(:disabled) {
+    transform: translateY(1px) scale(0.98);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    filter: brightness(0.9);
 }
 
 button:disabled { opacity: 0.5; cursor: not-allowed; }
