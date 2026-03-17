@@ -272,8 +272,8 @@ class TradingBot:
                 if self.martingale_enabled and self.martingale_mode == "exact_recovery" and self.martingale_profit < 0:
                     try:
                         multiplier = self.PAYOUT_MULTIPLIERS[contract_type][barrier]
-                        # Calculate exact stake needed to recover loss
-                        required_stake = abs(self.martingale_profit) / multiplier
+                        # Calculate exact stake needed to recover loss, minimum $0.35
+                        required_stake = max(0.35, abs(self.martingale_profit) / multiplier)
                         
                         # Apply safety cap
                         if required_stake > self.martingale_max_stake:
