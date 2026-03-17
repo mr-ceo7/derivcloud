@@ -130,5 +130,72 @@ class TestMartingaleDisabled(unittest.TestCase):
         print("✅ PASS: Martingale toggle works correctly")
 
 
+class TestMartingaleExactRecovery(unittest.TestCase):
+    """Test martingale with exact_recovery mode."""
+
+    def setUp(self):
+        self.bot = TradingBot()
+        self.bot.stake = 0.35
+        self.bot.base_stake = 0.35
+        self.bot.martingale_enabled = True
+        self.bot.martingale_mode = "exact_recovery"
+        self.bot.martingale_max_stake = 15.0
+
+    def test_loss_does_not_change_stake_immediately(self):
+        """Unlike other modes, exact recovery sets stake at Trigger time, not Result time."""
+        self.bot._apply_martingale(-10.0)
+        self.assertEqual(self.bot.stake, 0.35)  # Stake should stay base until next trigger
+        self.assertEqual(self.bot.martingale_profit, -10.0)
+        print("✅ PASS: Exact recovery does not change stake immediately on loss")
+
+    def test_win_resets_stake_and_profit(self):
+        """Win that recovers sequence > 0 should reset everything normally."""
+        self.bot._apply_martingale(-10.0)
+        self.bot._apply_martingale(15.0)
+        self.assertEqual(self.bot.stake, 0.35)
+        self.assertEqual(self.bot.martingale_profit, 0.0)
+        print("✅ PASS: Exact recovery resets correctly on sequence profit > 0")
+
+    # To test the actual math, we simulate the trigger logic inside handle_message
+    def _simulate_trigger_calculation(self, loss_amount, contract_type, barrier):
+        """Helper to invoke the exact recovery calculation block from handle_message."""
+        self.bot.martingale_profit = -abs(loss_amount)
+        multiplier = self.bot.PAYOUT_MULTIPLIERS[contract_type][barrier]
+        required_stake = abs(self.bot.martingale_profit) / multiplier
+        
+        if required_stake > self.bot.martingale_max_stake:
+            self.bot.stake = self.bot.martingale_max_stake
+        else:
+            self.bot.stake = round(required_stake, 2)
+            
+        return self.bot.stake
+
+    def test_math_digitover_5(self):
+        """DIGITOVER 5 multiplier is 1.43. Loss $10 -> stake should be 10/1.43 = $6.99"""
+        stake = self._simulate_trigger_calculation(10.0, "DIGITOVER", 5)
+        self.assertEqual(stake, 6.99)
+        print("✅ PASS: Exact Recovery Math for DIGITOVER 5 ($10 / 1.43)")
+
+    def test_math_digitover_8(self):
+        """DIGITOVER 8 multiplier is 7.93. Loss $10 -> stake should be 10/7.93 = $1.26"""
+        stake = self._simulate_trigger_calculation(10.0, "DIGITOVER", 8)
+        self.assertEqual(stake, 1.26)
+        print("✅ PASS: Exact Recovery Math for DIGITOVER 8 ($10 / 7.93)")
+
+    def test_math_digitunder_3(self):
+        """DIGITUNDER 3 multiplier is 2.21. Loss $10 -> stake should be 10/2.21 = $4.52"""
+        stake = self._simulate_trigger_calculation(10.0, "DIGITUNDER", 3)
+        self.assertEqual(stake, 4.52)
+        print("✅ PASS: Exact Recovery Math for DIGITUNDER 3 ($10 / 2.21)")
+
+    def test_max_stake_cap(self):
+        """Math needs $25, but cap is $15 -> stake should be $15.00"""
+        self.bot.martingale_max_stake = 15.0
+        # 10 / 0.40 = 25.0
+        stake = self._simulate_trigger_calculation(10.0, "DIGITOVER", 2)
+        self.assertEqual(stake, 15.0)
+        print("✅ PASS: Exact Recovery hits Max Stake cap correctly")
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

@@ -6,6 +6,12 @@ import threading
 from datetime import datetime
 
 class TradingBot:
+    # Net Profit Multipliers for $1 stake (approximate, based on probability - margin)
+    PAYOUT_MULTIPLIERS = {
+        "DIGITOVER": {0: 0.09, 1: 0.23, 2: 0.40, 3: 0.64, 4: 0.96, 5: 1.43, 6: 2.21, 7: 3.86, 8: 7.93},
+        "DIGITUNDER": {1: 7.93, 2: 3.86, 3: 2.21, 4: 1.43, 5: 0.96, 6: 0.64, 7: 0.40, 8: 0.23, 9: 0.09}
+    }
+
     def __init__(self):
         self.api_token = "YOUR_API_TOKEN"
         self.market = "1HZ100V" # Volatility 100 (1s) Index
@@ -262,6 +268,24 @@ class TradingBot:
                 
                 self.waiting_for_result = True  # Block until this trade resolves
                 
+                # --- APPLY EXACT RECOVERY MARTINGALE ---
+                if self.martingale_enabled and self.martingale_mode == "exact_recovery" and self.martingale_profit < 0:
+                    try:
+                        multiplier = self.PAYOUT_MULTIPLIERS[contract_type][barrier]
+                        # Calculate exact stake needed to recover loss
+                        required_stake = abs(self.martingale_profit) / multiplier
+                        
+                        # Apply safety cap
+                        if required_stake > self.martingale_max_stake:
+                            self.stake = self.martingale_max_stake
+                            self.log(f"⚠️ Exact Recovery hit max cap! Calculated: ${required_stake:.2f}, Capped at: ${self.martingale_max_stake}")
+                        else:
+                            self.stake = round(required_stake, 2)
+                            self.log(f"📈 Exact Recovery: Calculated ${self.stake} to recover ${abs(self.martingale_profit):.2f}")
+                    except KeyError:
+                        self.log(f"Error: No multiplier found for {contract_type} {barrier}, using base stake.")
+                        self.stake = self.base_stake
+
                 # Capture Trigger Details BEFORE sending
                 self.last_trigger = {
                     'entry_time': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -381,13 +405,19 @@ class TradingBot:
             self.martingale_profit = 0.0
             self.log(f"♻️ Martingale RESET. Stake back to {self.base_stake}")
         else:
-            # Still in loss — increase stake
+            # Still in loss — increase stake (unless exact_recovery, which calculates at trigger time)
             if self.martingale_mode == "multiply":
                 self.stake = self.stake * self.martingale_multiplier
             elif self.martingale_mode == "additive":
                 self.stake = self.stake + self.martingale_increment
+            elif self.martingale_mode == "exact_recovery":
+                # Exact recovery calculates dynamically per trade based on payout multiplier.
+                # So we just update the profit above and don't change the stake here.
+                # The stake will stay at the last traded value until the next trigger occurs.
+                self.log(f"📉 Sequence P/L: {round(self.martingale_profit, 2)}. Exact recovery will calculate on next trigger.")
+                return
             
-            # Apply safety cap
+            # Apply safety cap (only needed here for multiply/additive)
             if self.stake > self.martingale_max_stake:
                 self.stake = self.martingale_max_stake
                 self.log(f"⚠️ Martingale hit max stake cap: {self.martingale_max_stake}")

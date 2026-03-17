@@ -134,13 +134,17 @@ function toggleMartingaleMode() {
     const mode = document.getElementById('martingale-mode').value;
     const multGroup = document.getElementById('martingale-multiplier-group');
     const addGroup = document.getElementById('martingale-increment-group');
+    
+    // Hide both by default
+    multGroup.classList.add('hidden');
+    addGroup.classList.add('hidden');
+    
     if (mode === 'multiply') {
         multGroup.classList.remove('hidden');
-        addGroup.classList.add('hidden');
-    } else {
-        multGroup.classList.add('hidden');
+    } else if (mode === 'additive') {
         addGroup.classList.remove('hidden');
     }
+    // exact_recovery requires neither, so both stay hidden
 }
 
 function startBot() {
