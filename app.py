@@ -1,4 +1,4 @@
-from flask import Flask, render_template, jsonify, request, make_response
+from flask import Flask, render_template, jsonify, request, make_response, send_from_directory
 import threading
 import time
 import os
@@ -16,7 +16,8 @@ def index():
 
 @app.route('/favicon.ico')
 def favicon():
-    return '', 204
+    return send_from_directory(os.path.join(app.root_path, 'static'),
+                               'favicon.png', mimetype='image/png')
 
 @app.route('/api/status')
 def status():
