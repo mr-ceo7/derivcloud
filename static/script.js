@@ -250,6 +250,26 @@ function stopAccount(accountId) {
         .then(data => updateStats());
 }
 
+function startAll() {
+    fetch('/api/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ start_all: true })
+    })
+        .then(res => res.json())
+        .then(data => updateStats());
+}
+
+function stopAll() {
+    fetch('/api/stop', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stop_all: true })
+    })
+        .then(res => res.json())
+        .then(data => updateStats());
+}
+
 // ── Reset / Export ────────────────────────────────────────
 function resetStats() {
     if (!selectedAccountId) return alert('Select an account first.');

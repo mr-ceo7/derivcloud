@@ -51,6 +51,12 @@
             <small>Each token creates an independent trading bot instance.</small>
         </div>
 
+        <!-- Global Controls -->
+        <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+            <button onclick="startAll()" class="btn-start" style="flex: 1; padding: 10px; border-radius: 6px; border: none; font-weight: 600; cursor: pointer;">▶ Start All</button>
+            <button onclick="stopAll()" class="btn-stop" style="flex: 1; padding: 10px; border-radius: 6px; border: none; font-weight: 600; cursor: pointer;">⏹ Stop All</button>
+        </div>
+
         <!-- Account Cards Grid -->
         <div id="accounts-grid" class="accounts-grid">
             <div class="card" style="text-align: center; padding: 40px; color: var(--text-secondary);">
