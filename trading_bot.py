@@ -15,6 +15,14 @@ class TradingBot:
         self.consecutive_triggers = 1
         self.smart_mode = False # Trade both 0 and 9
         
+        # Strategy selection: "digit_streak" or "range_threshold"
+        self.strategy = "digit_streak"
+        
+        # Range Threshold settings
+        self.range_barrier = 5
+        self.range_direction = "below"  # "below" or "above"
+        self.range_consecutive_counter = 0
+        
         self.is_running = False
         self.websocket = None
         self.loop = None
@@ -44,7 +52,7 @@ class TradingBot:
         if len(self.logs) > 50:
             self.logs.pop()
 
-    def update_settings(self, token=None, market=None, stake=None, duration=None, prediction=None, consecutive=None, smart_mode=None):
+    def update_settings(self, token=None, market=None, stake=None, duration=None, prediction=None, consecutive=None, smart_mode=None, strategy=None, range_barrier=None, range_direction=None):
         if token: self.api_token = token
         if market: self.market = market
         if stake: self.stake = float(stake)
@@ -52,7 +60,10 @@ class TradingBot:
         if prediction: self.prediction_digit = int(prediction)
         if consecutive: self.consecutive_triggers = int(consecutive)
         if smart_mode is not None: self.smart_mode = (str(smart_mode).lower() == 'true')
-        self.log(f"Settings updated: Market={self.market}, Stake={self.stake}, Pred={self.prediction_digit}, Consec={self.consecutive_triggers}, Smart={self.smart_mode}")
+        if strategy: self.strategy = strategy
+        if range_barrier is not None: self.range_barrier = int(range_barrier)
+        if range_direction: self.range_direction = range_direction
+        self.log(f"Settings updated: Strategy={self.strategy}, Market={self.market}, Stake={self.stake}, Pred={self.prediction_digit}, Consec={self.consecutive_triggers}, Smart={self.smart_mode}, Barrier={self.range_barrier}, Dir={self.range_direction}")
 
     def reset_stats(self):
         self.total_profit = 0.0
@@ -62,6 +73,7 @@ class TradingBot:
         self.logs = []
         self.trade_history = []
         self.active_trades = {}
+        self.range_consecutive_counter = 0
         self.log("Stats reset by user.")
 
     def start_bot(self):
@@ -161,27 +173,54 @@ class TradingBot:
             contract_type = "DIGITOVER"
             barrier = 0
             
-            # Check conditions
-            # 1. Manual Target
-            if not self.smart_mode and last_digit == self.prediction_digit and self.consecutive_counter >= self.consecutive_triggers:
-                trigger_met = True
-                barrier = last_digit
-                if last_digit == 9:
-                    contract_type = "DIGITUNDER"
-                    barrier = 9
-                else:
-                    contract_type = "DIGITOVER"
-            
-            # 2. Smart Mode (Any 0 or 9 streak)
-            elif self.smart_mode and self.consecutive_counter >= self.consecutive_triggers:
-                if last_digit == 0:
+            if self.strategy == "digit_streak":
+                # ── STRATEGY 1: Digit Streak ──
+                # 1. Manual Target
+                if not self.smart_mode and last_digit == self.prediction_digit and self.consecutive_counter >= self.consecutive_triggers:
                     trigger_met = True
-                    contract_type = "DIGITOVER"
-                    barrier = 0
-                elif last_digit == 9:
-                    trigger_met = True
-                    contract_type = "DIGITUNDER"
-                    barrier = 9
+                    barrier = last_digit
+                    if last_digit == 9:
+                        contract_type = "DIGITUNDER"
+                        barrier = 9
+                    else:
+                        contract_type = "DIGITOVER"
+                
+                # 2. Smart Mode (Any 0 or 9 streak)
+                elif self.smart_mode and self.consecutive_counter >= self.consecutive_triggers:
+                    if last_digit == 0:
+                        trigger_met = True
+                        contract_type = "DIGITOVER"
+                        barrier = 0
+                    elif last_digit == 9:
+                        trigger_met = True
+                        contract_type = "DIGITUNDER"
+                        barrier = 9
+
+            elif self.strategy == "range_threshold":
+                # ── STRATEGY 2: Range Threshold ──
+                if self.range_direction == "below":
+                    # Count consecutive ticks where last digit < barrier
+                    if last_digit < self.range_barrier:
+                        self.range_consecutive_counter += 1
+                    else:
+                        self.range_consecutive_counter = 0
+                    
+                    if self.range_consecutive_counter >= self.consecutive_triggers:
+                        trigger_met = True
+                        contract_type = "DIGITOVER"
+                        barrier = self.range_barrier
+                
+                elif self.range_direction == "above":
+                    # Count consecutive ticks where last digit > barrier
+                    if last_digit > self.range_barrier:
+                        self.range_consecutive_counter += 1
+                    else:
+                        self.range_consecutive_counter = 0
+                    
+                    if self.range_consecutive_counter >= self.consecutive_triggers:
+                        trigger_met = True
+                        contract_type = "DIGITUNDER"
+                        barrier = self.range_barrier
 
             if trigger_met:
                 
@@ -213,6 +252,7 @@ class TradingBot:
                 self.log(f"Trigger! Quote: {quote} (L: {last_digit}) -> {action}")
                 self.consecutive_counter = 0 # Reset streak after trade
                 self.streak_digit = -1       # Reset logic
+                self.range_consecutive_counter = 0  # Reset range counter
 
         elif msg_type == 'proposal':
             proposal = data['proposal']

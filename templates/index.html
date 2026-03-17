@@ -76,19 +76,45 @@
                         <input type="number" id="duration" value="1">
                     </div>
                 </div>
-                <div class="row">
-                    <div class="form-group">
-                        <label>Prediction Digit (Over X)</label>
-                        <input type="number" id="prediction" value="0" min="0" max="8">
-                        <small>Trades trigger if digit > X</small>
+                <div class="form-group">
+                    <label>Strategy</label>
+                    <select id="strategy" onchange="toggleStrategySettings()">
+                        <option value="digit_streak" selected>Digit Streak</option>
+                        <option value="range_threshold">Range Threshold</option>
+                    </select>
+                </div>
+                <div id="digit-streak-settings">
+                    <div class="row">
+                        <div class="form-group">
+                            <label>Prediction Digit (Over X)</label>
+                            <input type="number" id="prediction" value="0" min="0" max="8">
+                            <small>Trades trigger if digit > X</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="smart-mode">Smart Strategy (0 & 9):</label>
+                            <div style="display: flex; align-items: center;">
+                                <input type="checkbox" id="smart-mode"
+                                    style="width: 20px; height: 20px; margin-right: 10px;">
+                                <span style="font-size: 0.9rem; color: #8b949e;">Auto-trade <strong>Over 0</strong> OR
+                                    <strong>Under 9</strong> streaks.</span>
+                            </div>
+                        </div>
                     </div>
-                    <div class="form-group">
-                        <label for="smart-mode">Smart Strategy (0 & 9):</label>
-                        <div style="display: flex; align-items: center;">
-                            <input type="checkbox" id="smart-mode"
-                                style="width: 20px; height: 20px; margin-right: 10px;">
-                            <span style="font-size: 0.9rem; color: #8b949e;">Auto-trade <strong>Over 0</strong> OR
-                                <strong>Under 9</strong> streaks.</span>
+                </div>
+                <div id="range-threshold-settings" class="hidden">
+                    <div class="row">
+                        <div class="form-group">
+                            <label>Range Barrier (0-9)</label>
+                            <input type="number" id="range-barrier" value="5" min="0" max="9">
+                            <small>The digit threshold</small>
+                        </div>
+                        <div class="form-group">
+                            <label>Direction</label>
+                            <select id="range-direction">
+                                <option value="below" selected>Below → Trade OVER</option>
+                                <option value="above">Above → Trade UNDER</option>
+                            </select>
+                            <small>When digits stay below/above barrier</small>
                         </div>
                     </div>
                 </div>

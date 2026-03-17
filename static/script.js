@@ -70,14 +70,30 @@ function saveSettings() {
     const prediction = document.getElementById('prediction').value;
     const consecutive = document.getElementById('consecutive').value;
     const smartMode = document.getElementById('smart-mode').checked;
+    const strategy = document.getElementById('strategy').value;
+    const rangeBarrier = document.getElementById('range-barrier').value;
+    const rangeDirection = document.getElementById('range-direction').value;
 
     fetch('/api/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, market, stake, duration, prediction, consecutive, smart_mode: smartMode })
+        body: JSON.stringify({ token, market, stake, duration, prediction, consecutive, smart_mode: smartMode, strategy, range_barrier: rangeBarrier, range_direction: rangeDirection })
     })
         .then(res => res.json())
         .then(data => alert(data.message));
+}
+
+function toggleStrategySettings() {
+    const strategy = document.getElementById('strategy').value;
+    const digitSettings = document.getElementById('digit-streak-settings');
+    const rangeSettings = document.getElementById('range-threshold-settings');
+    if (strategy === 'digit_streak') {
+        digitSettings.classList.remove('hidden');
+        rangeSettings.classList.add('hidden');
+    } else {
+        digitSettings.classList.add('hidden');
+        rangeSettings.classList.remove('hidden');
+    }
 }
 
 function startBot() {
@@ -116,6 +132,10 @@ fetch('/api/status').then(res => res.json()).then(data => {
     document.getElementById('prediction').value = data.settings.prediction;
     document.getElementById('consecutive').value = data.settings.consecutive;
     document.getElementById('smart-mode').checked = data.settings.smart_mode;
+    document.getElementById('strategy').value = data.settings.strategy;
+    document.getElementById('range-barrier').value = data.settings.range_barrier;
+    document.getElementById('range-direction').value = data.settings.range_direction;
+    toggleStrategySettings();
 
     updateUI(data);
 });

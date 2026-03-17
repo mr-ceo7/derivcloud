@@ -128,3 +128,11 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
     50% { opacity: 0.6; }
     100% { opacity: 1; }
 }
+
+.hidden { display: none; }
+
+.warning { background: #d29922; color: #0e1117; }
+.secondary { background: #30363d; color: #e6edf3; }
+
+.status-running { color: #238636; font-weight: 600; }
+.status-stopped { color: #da3633; font-weight: 600; }

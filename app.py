@@ -44,7 +44,10 @@ def status():
             'prediction': bot.prediction_digit,
             'consecutive': bot.consecutive_triggers,
             'smart_mode': bot.smart_mode,
-            'token_set': bot.api_token != "YOUR_API_TOKEN"
+            'token_set': bot.api_token != "YOUR_API_TOKEN",
+            'strategy': bot.strategy,
+            'range_barrier': bot.range_barrier,
+            'range_direction': bot.range_direction
         }
     })
 
@@ -58,7 +61,10 @@ def update_settings():
         duration=data.get('duration'),
         prediction=data.get('prediction'),
         consecutive=data.get('consecutive'),
-        smart_mode=data.get('smart_mode')
+        smart_mode=data.get('smart_mode'),
+        strategy=data.get('strategy'),
+        range_barrier=data.get('range_barrier'),
+        range_direction=data.get('range_direction')
     )
     return jsonify({'status': 'success', 'message': 'Settings updated'})
 
