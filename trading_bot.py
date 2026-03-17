@@ -141,10 +141,7 @@ class TradingBot:
                 # 1. Authorize
                 await self.send({"authorize": self.api_token})
                 
-                # 2. Subscribe to Balance updates
-                await self.send({"balance": 1, "subscribe": 1})
-                
-                # 3. Subscribe to Ticks
+                # 2. Subscribe to Ticks
                 await self.send({"ticks": self.market, "subscribe": 1})
                 
                 # 3. Message Loop
@@ -179,6 +176,9 @@ class TradingBot:
             self.current_balance = data['authorize']['balance']
             self.currency = data['authorize']['currency']
             self.log(f"Authorized. Balance: {self.current_balance} {self.currency}")
+            
+            # Now that we are fully authorized, subscribe to live balance updates
+            asyncio.create_task(self.send({"balance": 1, "subscribe": 1}))
 
         elif msg_type == 'balance':
             self.current_balance = data['balance']['balance']
