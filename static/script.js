@@ -2,22 +2,9 @@ function updateStats() {
     fetch('/api/status')
         .then(res => res.json())
         .then(data => {
-            // Update Stats
-            // Assuming statusText is a defined element, otherwise this would cause an error.
-            // If statusText is meant to replace the 'badge' logic, that would be a larger change.
-            // For now, inserting as provided, assuming statusText is defined elsewhere or will be.
-            // The instruction provided these lines directly after fetch, but they must be inside the .then(data => {}) block.
-            // Also, the instruction seems to be a partial replacement for the 'Update Stats' section.
-            // I will replace the existing 'Update Stats' block with the provided lines,
-            // and ensure the `statusText` lines are within the `data` scope.
-
-            // The instruction implies these lines should be added/modified within the data processing block.
-            // The `statusText` variable is not defined in the original code.
-            // Assuming `statusText` refers to an element that needs to be retrieved, e.g., `document.getElementById('status-text')`.
-            // Since the instruction doesn't define it, I'll add a placeholder definition for `statusText` for syntactic correctness.
-            // If the user intended to replace the 'badge' logic, the instruction is incomplete.
-            const statusText = document.getElementById('status-text'); // Placeholder: assuming this element exists
-            if (statusText) { // Check if element exists to prevent errors if it's not in HTML
+            // Update Status Text
+            const statusText = document.getElementById('status-text');
+            if (statusText) {
                 statusText.textContent = data.is_running ? "Running" : "Stopped";
                 statusText.className = data.is_running ? "status-running" : "status-stopped";
             }
@@ -47,17 +34,12 @@ function updateStats() {
                 martingalePlEl.style.color = mpl >= 0 ? '#238636' : '#da3633';
             }
 
-            // Update Badge & Buttons
-            const badge = document.getElementById('status-badge');
+            // Update Buttons
             if (data.is_running) {
-                badge.className = 'badge running';
-                badge.innerText = 'RUNNING';
                 document.getElementById('start-btn').disabled = true;
                 document.getElementById('stop-btn').disabled = false;
                 document.getElementById('save-btn').disabled = true;
             } else {
-                badge.className = 'badge stopped';
-                badge.innerText = 'STOPPED';
                 document.getElementById('start-btn').disabled = false;
                 document.getElementById('stop-btn').disabled = true;
                 document.getElementById('save-btn').disabled = false;

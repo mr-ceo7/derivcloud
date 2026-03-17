@@ -183,6 +183,7 @@ class TradingBot:
         elif msg_type == 'balance':
             self.current_balance = data['balance']['balance']
             self.currency = data['balance']['currency']
+            self.log(f"💰 Live Balance Update: {self.current_balance} {self.currency}")
 
         elif msg_type == 'tick':
             tick_epoch = data['tick'].get('epoch')
