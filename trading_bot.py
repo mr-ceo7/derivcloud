@@ -23,6 +23,15 @@ class TradingBot:
         self.range_direction = "below"  # "below" or "above"
         self.range_consecutive_counter = 0
         
+        # Martingale Recovery settings
+        self.martingale_enabled = False
+        self.martingale_mode = "multiply"  # "multiply" or "additive"
+        self.martingale_multiplier = 2.0
+        self.martingale_increment = 0.35
+        self.martingale_max_stake = 10.0
+        self.base_stake = self.stake  # Original stake to reset to
+        self.martingale_profit = 0.0  # Cumulative profit for current sequence
+        
         self.is_running = False
         self.websocket = None
         self.loop = None
@@ -54,18 +63,25 @@ class TradingBot:
         if len(self.logs) > 50:
             self.logs.pop()
 
-    def update_settings(self, token=None, market=None, stake=None, duration=None, prediction=None, consecutive=None, smart_mode=None, strategy=None, range_barrier=None, range_direction=None):
+    def update_settings(self, token=None, market=None, stake=None, duration=None, prediction=None, consecutive=None, smart_mode=None, strategy=None, range_barrier=None, range_direction=None, martingale_enabled=None, martingale_mode=None, martingale_multiplier=None, martingale_increment=None, martingale_max_stake=None):
         if token: self.api_token = token
         if market: self.market = market
-        if stake: self.stake = float(stake)
+        if stake:
+            self.stake = float(stake)
+            self.base_stake = float(stake)
         if duration: self.duration = int(duration)
-        if prediction: self.prediction_digit = int(prediction)
+        if prediction is not None: self.prediction_digit = int(prediction)
         if consecutive: self.consecutive_triggers = int(consecutive)
         if smart_mode is not None: self.smart_mode = (str(smart_mode).lower() == 'true')
         if strategy: self.strategy = strategy
         if range_barrier is not None: self.range_barrier = int(range_barrier)
         if range_direction: self.range_direction = range_direction
-        self.log(f"Settings updated: Strategy={self.strategy}, Market={self.market}, Stake={self.stake}, Pred={self.prediction_digit}, Consec={self.consecutive_triggers}, Smart={self.smart_mode}, Barrier={self.range_barrier}, Dir={self.range_direction}")
+        if martingale_enabled is not None: self.martingale_enabled = (str(martingale_enabled).lower() == 'true')
+        if martingale_mode: self.martingale_mode = martingale_mode
+        if martingale_multiplier is not None: self.martingale_multiplier = float(martingale_multiplier)
+        if martingale_increment is not None: self.martingale_increment = float(martingale_increment)
+        if martingale_max_stake is not None: self.martingale_max_stake = float(martingale_max_stake)
+        self.log(f"Settings updated: Strategy={self.strategy}, Stake={self.stake}, Martingale={'ON' if self.martingale_enabled else 'OFF'}")
 
     def reset_stats(self):
         self.total_profit = 0.0
@@ -78,6 +94,8 @@ class TradingBot:
         self.range_consecutive_counter = 0
         self.last_tick_epoch = None
         self.waiting_for_result = False
+        self.stake = self.base_stake  # Reset stake to base
+        self.martingale_profit = 0.0
         self.log("Stats reset by user.")
 
     def start_bot(self):
@@ -117,7 +135,10 @@ class TradingBot:
                 # 1. Authorize
                 await self.send({"authorize": self.api_token})
                 
-                # 2. Subscribe to Ticks
+                # 2. Subscribe to Balance updates
+                await self.send({"balance": 1, "subscribe": 1})
+                
+                # 3. Subscribe to Ticks
                 await self.send({"ticks": self.market, "subscribe": 1})
                 
                 # 3. Message Loop
@@ -152,6 +173,10 @@ class TradingBot:
             self.current_balance = data['authorize']['balance']
             self.currency = data['authorize']['currency']
             self.log(f"Authorized. Balance: {self.current_balance} {self.currency}")
+
+        elif msg_type == 'balance':
+            self.current_balance = data['balance']['balance']
+            self.currency = data['balance']['currency']
 
         elif msg_type == 'tick':
             tick_epoch = data['tick'].get('epoch')
@@ -341,5 +366,33 @@ class TradingBot:
                 self.total_trades += 1
                 if profit > 0: self.wins += 1
                 else: self.losses += 1
+                
+                # Apply martingale recovery
+                if self.martingale_enabled:
+                    self._apply_martingale(profit)
+
+    def _apply_martingale(self, profit):
+        """Adjust stake based on martingale recovery logic."""
+        self.martingale_profit += profit
+        
+        if self.martingale_profit > 0:
+            # Sequence recovered — reset
+            self.stake = self.base_stake
+            self.martingale_profit = 0.0
+            self.log(f"♻️ Martingale RESET. Stake back to {self.base_stake}")
+        else:
+            # Still in loss — increase stake
+            if self.martingale_mode == "multiply":
+                self.stake = self.stake * self.martingale_multiplier
+            elif self.martingale_mode == "additive":
+                self.stake = self.stake + self.martingale_increment
+            
+            # Apply safety cap
+            if self.stake > self.martingale_max_stake:
+                self.stake = self.martingale_max_stake
+                self.log(f"⚠️ Martingale hit max stake cap: {self.martingale_max_stake}")
+            
+            self.stake = round(self.stake, 2)
+            self.log(f"📈 Martingale: Stake adjusted to {self.stake} (seq P/L: {round(self.martingale_profit, 2)})")
 
 bot = TradingBot()

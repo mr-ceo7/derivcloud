@@ -39,7 +39,7 @@ def status():
         'current_digit': bot.current_digit,
         'settings': {
             'market': bot.market,
-            'stake': bot.stake,
+            'stake': bot.base_stake,
             'duration': bot.duration,
             'prediction': bot.prediction_digit,
             'consecutive': bot.consecutive_triggers,
@@ -47,7 +47,14 @@ def status():
             'token_set': bot.api_token != "YOUR_API_TOKEN",
             'strategy': bot.strategy,
             'range_barrier': bot.range_barrier,
-            'range_direction': bot.range_direction
+            'range_direction': bot.range_direction,
+            'martingale_enabled': bot.martingale_enabled,
+            'martingale_mode': bot.martingale_mode,
+            'martingale_multiplier': bot.martingale_multiplier,
+            'martingale_increment': bot.martingale_increment,
+            'martingale_max_stake': bot.martingale_max_stake,
+            'current_stake': bot.stake,
+            'martingale_profit': round(bot.martingale_profit, 2)
         }
     })
 
@@ -64,7 +71,12 @@ def update_settings():
         smart_mode=data.get('smart_mode'),
         strategy=data.get('strategy'),
         range_barrier=data.get('range_barrier'),
-        range_direction=data.get('range_direction')
+        range_direction=data.get('range_direction'),
+        martingale_enabled=data.get('martingale_enabled'),
+        martingale_mode=data.get('martingale_mode'),
+        martingale_multiplier=data.get('martingale_multiplier'),
+        martingale_increment=data.get('martingale_increment'),
+        martingale_max_stake=data.get('martingale_max_stake')
     )
     return jsonify({'status': 'success', 'message': 'Settings updated'})
 

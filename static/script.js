@@ -37,6 +37,16 @@ function updateStats() {
                 // For now just plain text update.
             }
 
+            // Update Martingale live display
+            const currentStakeEl = document.getElementById('current-stake');
+            const martingalePlEl = document.getElementById('martingale-pl');
+            if (currentStakeEl && data.settings) {
+                currentStakeEl.textContent = '$' + data.settings.current_stake.toFixed(2);
+                const mpl = data.settings.martingale_profit;
+                martingalePlEl.textContent = '$' + mpl.toFixed(2);
+                martingalePlEl.style.color = mpl >= 0 ? '#238636' : '#da3633';
+            }
+
             // Update Badge & Buttons
             const badge = document.getElementById('status-badge');
             if (data.is_running) {
@@ -73,11 +83,25 @@ function saveSettings() {
     const strategy = document.getElementById('strategy').value;
     const rangeBarrier = document.getElementById('range-barrier').value;
     const rangeDirection = document.getElementById('range-direction').value;
+    const martingaleEnabled = document.getElementById('martingale-enabled').checked;
+    const martingaleMode = document.getElementById('martingale-mode').value;
+    const martingaleMultiplier = document.getElementById('martingale-multiplier').value;
+    const martingaleIncrement = document.getElementById('martingale-increment').value;
+    const martingaleMaxStake = document.getElementById('martingale-max-stake').value;
 
     fetch('/api/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, market, stake, duration, prediction, consecutive, smart_mode: smartMode, strategy, range_barrier: rangeBarrier, range_direction: rangeDirection })
+        body: JSON.stringify({
+            token, market, stake, duration, prediction, consecutive,
+            smart_mode: smartMode, strategy,
+            range_barrier: rangeBarrier, range_direction: rangeDirection,
+            martingale_enabled: martingaleEnabled,
+            martingale_mode: martingaleMode,
+            martingale_multiplier: martingaleMultiplier,
+            martingale_increment: martingaleIncrement,
+            martingale_max_stake: martingaleMaxStake
+        })
     })
         .then(res => res.json())
         .then(data => alert(data.message));
@@ -93,6 +117,29 @@ function toggleStrategySettings() {
     } else {
         digitSettings.classList.add('hidden');
         rangeSettings.classList.remove('hidden');
+    }
+}
+
+function toggleMartingaleSettings() {
+    const enabled = document.getElementById('martingale-enabled').checked;
+    const settings = document.getElementById('martingale-settings');
+    if (enabled) {
+        settings.classList.remove('hidden');
+    } else {
+        settings.classList.add('hidden');
+    }
+}
+
+function toggleMartingaleMode() {
+    const mode = document.getElementById('martingale-mode').value;
+    const multGroup = document.getElementById('martingale-multiplier-group');
+    const addGroup = document.getElementById('martingale-increment-group');
+    if (mode === 'multiply') {
+        multGroup.classList.remove('hidden');
+        addGroup.classList.add('hidden');
+    } else {
+        multGroup.classList.add('hidden');
+        addGroup.classList.remove('hidden');
     }
 }
 
@@ -135,7 +182,14 @@ fetch('/api/status').then(res => res.json()).then(data => {
     document.getElementById('strategy').value = data.settings.strategy;
     document.getElementById('range-barrier').value = data.settings.range_barrier;
     document.getElementById('range-direction').value = data.settings.range_direction;
+    document.getElementById('martingale-enabled').checked = data.settings.martingale_enabled;
+    document.getElementById('martingale-mode').value = data.settings.martingale_mode;
+    document.getElementById('martingale-multiplier').value = data.settings.martingale_multiplier;
+    document.getElementById('martingale-increment').value = data.settings.martingale_increment;
+    document.getElementById('martingale-max-stake').value = data.settings.martingale_max_stake;
     toggleStrategySettings();
+    toggleMartingaleSettings();
+    toggleMartingaleMode();
 
     updateUI(data);
 });

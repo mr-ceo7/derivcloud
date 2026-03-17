@@ -123,6 +123,48 @@
                     <input type="number" id="consecutive" value="1" min="1">
                     <small>Wait for X times match</small>
                 </div>
+
+                <!-- Martingale Recovery -->
+                <div style="border-top: 1px solid var(--border); margin-top: 15px; padding-top: 15px;">
+                    <div class="form-group">
+                        <label for="martingale-enabled">Recovery (Martingale):</label>
+                        <div style="display: flex; align-items: center;">
+                            <input type="checkbox" id="martingale-enabled" onchange="toggleMartingaleSettings()"
+                                style="width: 20px; height: 20px; margin-right: 10px;">
+                            <span style="font-size: 0.9rem; color: #8b949e;">Adjust stake after losses to recover</span>
+                        </div>
+                    </div>
+                    <div id="martingale-settings" class="hidden">
+                        <div class="form-group">
+                            <label>Mode</label>
+                            <select id="martingale-mode" onchange="toggleMartingaleMode()">
+                                <option value="multiply" selected>Multiply (e.g. 2x)</option>
+                                <option value="additive">Additive (e.g. +$0.35)</option>
+                            </select>
+                        </div>
+                        <div class="row">
+                            <div class="form-group" id="martingale-multiplier-group">
+                                <label>Multiplier</label>
+                                <input type="number" id="martingale-multiplier" value="2.0" step="0.1" min="1.1">
+                                <small>Multiply stake by X after loss</small>
+                            </div>
+                            <div class="form-group hidden" id="martingale-increment-group">
+                                <label>Increment ($)</label>
+                                <input type="number" id="martingale-increment" value="0.35" step="0.01" min="0.01">
+                                <small>Add $X to stake after loss</small>
+                            </div>
+                            <div class="form-group">
+                                <label>Max Stake ($)</label>
+                                <input type="number" id="martingale-max-stake" value="10.0" step="0.5" min="0.5">
+                                <small>Safety cap</small>
+                            </div>
+                        </div>
+                        <div style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 10px;">
+                            Current stake: <span id="current-stake" style="color: var(--accent); font-weight: 600;">$0.35</span>
+                            &nbsp;|&nbsp; Seq P/L: <span id="martingale-pl" style="font-weight: 600;">$0.00</span>
+                        </div>
+                    </div>
+                </div>
                 <div class="actions">
                     <button id="save-btn" onclick="saveSettings()">Save Settings</button>
                     <button id="start-btn" onclick="startBot()">Start Bot</button>
