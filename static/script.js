@@ -118,6 +118,11 @@ function loadSettingsToForm(settings) {
     if (settings.trio_role) document.getElementById('trio-role').value = settings.trio_role;
     if (settings.trio_trigger) document.getElementById('trio-trigger').value = settings.trio_trigger;
     if (settings.trio_digit !== undefined) document.getElementById('trio-digit').value = settings.trio_digit;
+    if (settings.duo_role) document.getElementById('duo-role').value = settings.duo_role;
+    if (settings.duo_trigger) document.getElementById('duo-trigger').value = settings.duo_trigger;
+    if (settings.duo_trigger_digit !== undefined) document.getElementById('duo-trigger-digit').value = settings.duo_trigger_digit;
+    if (settings.duo_switch_enabled !== undefined) document.getElementById('duo-switch-enabled').checked = settings.duo_switch_enabled;
+    if (settings.duo_switch_after !== undefined) document.getElementById('duo-switch-after').value = settings.duo_switch_after;
     toggleStrategySettings();
     toggleMartingaleSettings();
     toggleMartingaleMode();
@@ -190,6 +195,11 @@ function getSettingsPayload() {
         trio_role: document.getElementById('trio-role').value,
         trio_trigger: document.getElementById('trio-trigger').value,
         trio_digit: document.getElementById('trio-digit').value,
+        duo_role: document.getElementById('duo-role').value,
+        duo_trigger: document.getElementById('duo-trigger').value,
+        duo_trigger_digit: document.getElementById('duo-trigger-digit').value,
+        duo_switch_enabled: document.getElementById('duo-switch-enabled').checked,
+        duo_switch_after: document.getElementById('duo-switch-after').value,
     };
 }
 
@@ -304,15 +314,19 @@ function toggleStrategySettings() {
     const digitSettings = document.getElementById('digit-streak-settings');
     const rangeSettings = document.getElementById('range-threshold-settings');
     const trioSettings = document.getElementById('trio-coverage-settings');
+    const duoSettings = document.getElementById('duo-coverage-settings');
     digitSettings.classList.add('hidden');
     rangeSettings.classList.add('hidden');
     trioSettings.classList.add('hidden');
+    duoSettings.classList.add('hidden');
     if (strategy === 'digit_streak') {
         digitSettings.classList.remove('hidden');
     } else if (strategy === 'range_threshold') {
         rangeSettings.classList.remove('hidden');
     } else if (strategy === 'trio_coverage') {
         trioSettings.classList.remove('hidden');
+    } else if (strategy === 'duo_coverage') {
+        duoSettings.classList.remove('hidden');
     }
 }
 

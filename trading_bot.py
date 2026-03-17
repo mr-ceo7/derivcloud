@@ -10,7 +10,9 @@ class TradingBot:
     PAYOUT_MULTIPLIERS = {
         "DIGITOVER": {0: 0.09, 1: 0.23, 2: 0.40, 3: 0.64, 4: 0.96, 5: 1.43, 6: 2.21, 7: 3.86, 8: 7.93},
         "DIGITUNDER": {1: 7.93, 2: 3.86, 3: 2.21, 4: 1.43, 5: 0.96, 6: 0.64, 7: 0.40, 8: 0.23, 9: 0.09},
-        "DIGITMATCH": {0: 8.50, 1: 8.50, 2: 8.50, 3: 8.50, 4: 8.50, 5: 8.50, 6: 8.50, 7: 8.50, 8: 8.50, 9: 8.50}
+        "DIGITMATCH": {0: 8.50, 1: 8.50, 2: 8.50, 3: 8.50, 4: 8.50, 5: 8.50, 6: 8.50, 7: 8.50, 8: 8.50, 9: 8.50},
+        "DIGITEVEN": {None: 0.94},
+        "DIGITODD": {None: 0.94}
     }
 
     def __init__(self):
@@ -34,6 +36,14 @@ class TradingBot:
         self.trio_role = "over_5"    # "over_5", "under_5", "match_5"
         self.trio_trigger = "every_tick"  # "every_tick" or "on_digit_5"
         self.trio_digit = 5  # Prediction digit for trio (0-9)
+        
+        # Even/Odd Duo settings
+        self.duo_role = "even"          # "even" or "odd"
+        self.duo_trigger = "every_tick"  # "every_tick" or "on_digit"
+        self.duo_trigger_digit = 5       # Digit that triggers (0-9)
+        self.duo_switch_enabled = False
+        self.duo_switch_after = 3        # Switch after N consecutive losses
+        self.duo_consecutive_losses = 0  # Current consecutive loss count
         
         # Martingale Recovery settings
         self.martingale_enabled = False
@@ -76,7 +86,7 @@ class TradingBot:
         if len(self.logs) > 50:
             self.logs.pop()
 
-    def update_settings(self, token=None, market=None, stake=None, duration=None, prediction=None, consecutive=None, smart_mode=None, strategy=None, range_barrier=None, range_direction=None, martingale_enabled=None, martingale_mode=None, martingale_multiplier=None, martingale_increment=None, martingale_max_stake=None, trio_role=None, trio_trigger=None, trio_digit=None):
+    def update_settings(self, token=None, market=None, stake=None, duration=None, prediction=None, consecutive=None, smart_mode=None, strategy=None, range_barrier=None, range_direction=None, martingale_enabled=None, martingale_mode=None, martingale_multiplier=None, martingale_increment=None, martingale_max_stake=None, trio_role=None, trio_trigger=None, trio_digit=None, duo_role=None, duo_trigger=None, duo_trigger_digit=None, duo_switch_enabled=None, duo_switch_after=None):
         if token: self.api_token = token
         if market: self.market = market
         if stake:
@@ -97,6 +107,11 @@ class TradingBot:
         if trio_role: self.trio_role = trio_role
         if trio_trigger: self.trio_trigger = trio_trigger
         if trio_digit is not None: self.trio_digit = int(trio_digit)
+        if duo_role: self.duo_role = duo_role
+        if duo_trigger: self.duo_trigger = duo_trigger
+        if duo_trigger_digit is not None: self.duo_trigger_digit = int(duo_trigger_digit)
+        if duo_switch_enabled is not None: self.duo_switch_enabled = (str(duo_switch_enabled).lower() == 'true')
+        if duo_switch_after is not None: self.duo_switch_after = int(duo_switch_after)
         self.log(f"Settings updated: Strategy={self.strategy}, Stake={self.stake}, Martingale={'ON' if self.martingale_enabled else 'OFF'}")
 
     def reset_stats(self):
@@ -295,6 +310,22 @@ class TradingBot:
                         contract_type = "DIGITMATCH"
                         barrier = self.trio_digit
 
+            elif self.strategy == "duo_coverage":
+                # ── STRATEGY 4: Even/Odd Duo ──
+                should_trigger = False
+                if self.duo_trigger == "every_tick":
+                    should_trigger = True
+                elif self.duo_trigger == "on_digit" and last_digit == self.duo_trigger_digit:
+                    should_trigger = True
+                
+                if should_trigger:
+                    trigger_met = True
+                    if self.duo_role == "even":
+                        contract_type = "DIGITEVEN"
+                    else:
+                        contract_type = "DIGITODD"
+                    barrier = None  # DIGITEVEN/DIGITODD don't use barrier
+
             if trigger_met and not self.waiting_for_result:
                 
                 self.waiting_for_result = True  # Block until this trade resolves
@@ -302,7 +333,10 @@ class TradingBot:
                 # --- APPLY EXACT RECOVERY MARTINGALE ---
                 if self.martingale_enabled and self.martingale_mode == "exact_recovery" and self.martingale_profit < 0:
                     try:
-                        multiplier = self.PAYOUT_MULTIPLIERS[contract_type][barrier]
+                        mult_map = self.PAYOUT_MULTIPLIERS.get(contract_type, {})
+                        multiplier = mult_map.get(barrier) or mult_map.get(None)
+                        if not multiplier:
+                            raise KeyError(f"No multiplier for {contract_type} {barrier}")
                         # Calculate exact stake needed to recover loss, minimum $0.35
                         required_stake = max(0.35, abs(self.martingale_profit) / multiplier)
                         
@@ -336,8 +370,9 @@ class TradingBot:
                     "duration": self.duration,
                     "duration_unit": "t",
                     "symbol": self.market,
-                    "barrier": barrier 
                 }
+                if barrier is not None:
+                    req["barrier"] = barrier
                 await self.send(req)
                 
                 # Log after sending
@@ -421,6 +456,18 @@ class TradingBot:
                 self.total_trades += 1
                 if profit > 0: self.wins += 1
                 else: self.losses += 1
+                
+                # Auto-switch for duo_coverage
+                if self.strategy == "duo_coverage" and self.duo_switch_enabled:
+                    if profit <= 0:
+                        self.duo_consecutive_losses += 1
+                        if self.duo_consecutive_losses >= self.duo_switch_after:
+                            old_role = self.duo_role
+                            self.duo_role = "odd" if self.duo_role == "even" else "even"
+                            self.duo_consecutive_losses = 0
+                            self.log(f"🔄 Auto-switch! {old_role.upper()} → {self.duo_role.upper()} after {self.duo_switch_after} consecutive losses")
+                    else:
+                        self.duo_consecutive_losses = 0
                 
                 # Apply martingale recovery
                 if self.martingale_enabled:
@@ -561,7 +608,13 @@ class BotManager:
                     'martingale_profit': round(bot.martingale_profit, 2),
                     'trio_role': bot.trio_role,
                     'trio_trigger': bot.trio_trigger,
-                    'trio_digit': bot.trio_digit
+                    'trio_digit': bot.trio_digit,
+                    'duo_role': bot.duo_role,
+                    'duo_trigger': bot.duo_trigger,
+                    'duo_trigger_digit': bot.duo_trigger_digit,
+                    'duo_switch_enabled': bot.duo_switch_enabled,
+                    'duo_switch_after': bot.duo_switch_after,
+                    'duo_consecutive_losses': bot.duo_consecutive_losses
                 }
             })
         return statuses

@@ -82,6 +82,11 @@ def update_settings():
         'trio_role': data.get('trio_role'),
         'trio_trigger': data.get('trio_trigger'),
         'trio_digit': data.get('trio_digit'),
+        'duo_role': data.get('duo_role'),
+        'duo_trigger': data.get('duo_trigger'),
+        'duo_trigger_digit': data.get('duo_trigger_digit'),
+        'duo_switch_enabled': data.get('duo_switch_enabled'),
+        'duo_switch_after': data.get('duo_switch_after'),
     }
 
     if apply_to_all:

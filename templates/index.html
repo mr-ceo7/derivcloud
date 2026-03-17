@@ -92,7 +92,8 @@
                     <select id="strategy" onchange="toggleStrategySettings()">
                         <option value="digit_streak" selected>Digit Streak</option>
                         <option value="range_threshold">Range Threshold</option>
-                        <option value="trio_coverage">Trio Coverage (Digit 5 Hedge)</option>
+                        <option value="trio_coverage">Trio Coverage (Digit Hedge)</option>
+                        <option value="duo_coverage">Even/Odd Duo</option>
                     </select>
                 </div>
                 <div id="digit-streak-settings">
@@ -154,6 +155,45 @@
                             <option value="on_digit_5">Only When Digit Matches</option>
                         </select>
                         <small>When to place the trade</small>
+                    </div>
+                </div>
+                <div id="duo-coverage-settings" class="hidden">
+                    <div class="row">
+                        <div class="form-group">
+                            <label>Duo Role</label>
+                            <select id="duo-role">
+                                <option value="even" selected>Even (DIGITEVEN)</option>
+                                <option value="odd">Odd (DIGITODD)</option>
+                            </select>
+                            <small>Each bot needs a different role</small>
+                        </div>
+                        <div class="form-group">
+                            <label>Trigger Mode</label>
+                            <select id="duo-trigger">
+                                <option value="every_tick" selected>Every Tick</option>
+                                <option value="on_digit">On Specific Digit</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Trigger Digit (0-9)</label>
+                        <input type="number" id="duo-trigger-digit" value="5" min="0" max="9">
+                        <small>Only fires when this digit appears (if trigger = On Specific Digit)</small>
+                    </div>
+                    <hr style="border-color: var(--border); margin: 15px 0;">
+                    <div class="row">
+                        <div class="form-group">
+                            <label for="duo-switch-enabled">Auto-Switch:</label>
+                            <div style="display: flex; align-items: center;">
+                                <input type="checkbox" id="duo-switch-enabled" style="width: 20px; height: 20px; margin-right: 10px;">
+                                <span style="font-size: 0.9rem; color: #8b949e;">Flip to opposite side after consecutive losses</span>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Switch After N Losses</label>
+                            <input type="number" id="duo-switch-after" value="3" min="1" max="20">
+                            <small>Number of consecutive losses before flipping</small>
+                        </div>
                     </div>
                 </div>
                 <div class="form-group">
