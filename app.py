@@ -179,5 +179,32 @@ def export_logs():
     output.headers["Content-type"] = "text/csv"
     return output
 
+@app.route('/api/export_all_logs')
+def export_all_logs():
+    si = io.StringIO()
+    cw = csv.writer(si)
+    cw.writerow(["Account", "Contract ID", "Type", "Entry Time", "Entry Quote", "Entry Digit", "Exit Time", "Exit Quote", "Exit Digit", "Status", "Profit"])
+    
+    for account_id, bot in manager.bots.items():
+        for trade in bot.trade_history:
+            cw.writerow([
+                account_id,
+                trade.get("Contract ID"),
+                trade.get("Type"),
+                trade.get("Entry Time"),
+                trade.get("Entry Quote"),
+                trade.get("Entry Digit"),
+                trade.get("Exit Time"),
+                trade.get("Exit Quote"),
+                trade.get("Exit Digit"),
+                trade.get("Status"),
+                trade.get("Profit")
+            ])
+        
+    output = make_response(si.getvalue())
+    output.headers["Content-Disposition"] = "attachment; filename=trading_logs_all.csv"
+    output.headers["Content-type"] = "text/csv"
+    return output
+
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5001, threaded=True, use_reloader=False)

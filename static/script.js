@@ -288,6 +288,10 @@ function exportLogs() {
     window.location.href = `/api/export_logs?account_id=${selectedAccountId}`;
 }
 
+function exportAllLogs() {
+    window.location.href = '/api/export_all_logs';
+}
+
 // ── Strategy / Martingale Toggles ─────────────────────────
 function toggleStrategySettings() {
     const strategy = document.getElementById('strategy').value;
