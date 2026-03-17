@@ -192,7 +192,7 @@ fetch('/api/status').then(res => res.json()).then(data => {
     toggleMartingaleSettings();
     toggleMartingaleMode();
 
-    updateUI(data);
+    updateStats();
 });
 
 // Poll every 1s
