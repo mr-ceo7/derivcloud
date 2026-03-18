@@ -87,6 +87,9 @@ def update_settings():
         'duo_trigger_digit': data.get('duo_trigger_digit'),
         'duo_switch_enabled': data.get('duo_switch_enabled'),
         'duo_switch_after': data.get('duo_switch_after'),
+        'cooldown_enabled': data.get('cooldown_enabled'),
+        'cooldown_after': data.get('cooldown_after'),
+        'cooldown_check': data.get('cooldown_check'),
     }
 
     if apply_to_all:

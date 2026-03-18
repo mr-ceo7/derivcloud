@@ -45,6 +45,16 @@ class TradingBot:
         self.duo_switch_after = 3        # Switch after N consecutive losses
         self.duo_consecutive_losses = 0  # Current consecutive loss count
         
+        # Cool-Down (Paper Trading) settings
+        self.cooldown_enabled = False
+        self.cooldown_after = 3          # X: Enter cooldown after X consecutive losses
+        self.cooldown_check = 2          # Y: Simulate Y trades before resuming
+        self.cooldown_active = False     # Whether currently in cooldown mode
+        self.cooldown_pending_sim = None # Pending simulated trade awaiting next tick
+        self.cooldown_sim_wins = 0       # Wins in current simulation batch
+        self.cooldown_sim_count = 0      # Trades checked in current simulation batch
+        self.cooldown_loss_streak = 0    # Current consecutive real-trade loss count
+        
         # Martingale Recovery settings
         self.martingale_enabled = False
         self.martingale_mode = "multiply"  # "multiply" or "additive"
@@ -86,7 +96,7 @@ class TradingBot:
         if len(self.logs) > 50:
             self.logs.pop()
 
-    def update_settings(self, token=None, market=None, stake=None, duration=None, prediction=None, consecutive=None, smart_mode=None, strategy=None, range_barrier=None, range_direction=None, martingale_enabled=None, martingale_mode=None, martingale_multiplier=None, martingale_increment=None, martingale_max_stake=None, trio_role=None, trio_trigger=None, trio_digit=None, duo_role=None, duo_trigger=None, duo_trigger_digit=None, duo_switch_enabled=None, duo_switch_after=None):
+    def update_settings(self, token=None, market=None, stake=None, duration=None, prediction=None, consecutive=None, smart_mode=None, strategy=None, range_barrier=None, range_direction=None, martingale_enabled=None, martingale_mode=None, martingale_multiplier=None, martingale_increment=None, martingale_max_stake=None, trio_role=None, trio_trigger=None, trio_digit=None, duo_role=None, duo_trigger=None, duo_trigger_digit=None, duo_switch_enabled=None, duo_switch_after=None, cooldown_enabled=None, cooldown_after=None, cooldown_check=None):
         if token: self.api_token = token
         if market: self.market = market
         if stake:
@@ -112,6 +122,9 @@ class TradingBot:
         if duo_trigger_digit is not None: self.duo_trigger_digit = int(duo_trigger_digit)
         if duo_switch_enabled is not None: self.duo_switch_enabled = (str(duo_switch_enabled).lower() == 'true')
         if duo_switch_after is not None: self.duo_switch_after = int(duo_switch_after)
+        if cooldown_enabled is not None: self.cooldown_enabled = (str(cooldown_enabled).lower() == 'true')
+        if cooldown_after is not None: self.cooldown_after = int(cooldown_after)
+        if cooldown_check is not None: self.cooldown_check = int(cooldown_check)
         self.log(f"Settings updated: Strategy={self.strategy}, Stake={self.stake}, Martingale={'ON' if self.martingale_enabled else 'OFF'}")
 
     def reset_stats(self):
@@ -127,6 +140,11 @@ class TradingBot:
         self.waiting_for_result = False
         self.stake = self.base_stake  # Reset stake to base
         self.martingale_profit = 0.0
+        self.cooldown_active = False
+        self.cooldown_pending_sim = None
+        self.cooldown_sim_wins = 0
+        self.cooldown_sim_count = 0
+        self.cooldown_loss_streak = 0
         self.log("Stats reset by user.")
 
     def start_bot(self):
@@ -233,6 +251,28 @@ class TradingBot:
             last_digit = int(quote_str[-1])
             self.current_digit = last_digit
             
+            # ── Resolve Pending Cool-Down Simulation ──
+            if self.cooldown_pending_sim:
+                sim = self.cooldown_pending_sim
+                self.cooldown_pending_sim = None
+                sim_win = self._check_simulated_result(sim['contract_type'], sim.get('barrier'), last_digit)
+                self.cooldown_sim_count += 1
+                if sim_win:
+                    self.cooldown_sim_wins += 1
+                self.log(f"🔍 Sim trade {self.cooldown_sim_count}/{self.cooldown_check}: {sim['contract_type']} → {'WIN' if sim_win else 'LOSS'} (digit={last_digit})")
+                
+                if self.cooldown_sim_count >= self.cooldown_check:
+                    if self.cooldown_sim_wins >= 1:
+                        # At least 1 win → exit cooldown
+                        self.cooldown_active = False
+                        self.cooldown_loss_streak = 0
+                        self.log(f"✅ Cool-down ended! {self.cooldown_sim_wins}/{self.cooldown_sim_count} sim wins. Resuming real trades.")
+                    else:
+                        self.log(f"❌ All {self.cooldown_check} sim trades lost. Checking next batch...")
+                    # Reset batch counters for next round
+                    self.cooldown_sim_wins = 0
+                    self.cooldown_sim_count = 0
+            
             # Generic Streak Tracking
             if self.current_digit == self.prediction_digit: # Manual Mode Match
                  pass # Logic handled below? 
@@ -337,6 +377,20 @@ class TradingBot:
                     barrier = None  # DIGITEVEN/DIGITODD don't use barrier
 
             if trigger_met and not self.waiting_for_result:
+                
+                # ── Cool-Down: Simulate instead of real trade ──
+                if self.cooldown_enabled and self.cooldown_active:
+                    if not self.cooldown_pending_sim:
+                        self.cooldown_pending_sim = {
+                            'contract_type': contract_type,
+                            'barrier': barrier
+                        }
+                        self.log(f"⏸️ Cool-down active: simulating {contract_type} (not placing real trade)")
+                    # Skip the real trade entirely
+                    self.consecutive_counter = 0
+                    self.streak_digit = -1
+                    self.range_consecutive_counter = 0
+                    return
                 
                 self.waiting_for_result = True  # Block until this trade resolves
                 
@@ -467,6 +521,18 @@ class TradingBot:
                 if profit > 0: self.wins += 1
                 else: self.losses += 1
                 
+                # Cool-down: track consecutive real-trade losses
+                if self.cooldown_enabled:
+                    if profit <= 0:
+                        self.cooldown_loss_streak += 1
+                        if self.cooldown_loss_streak >= self.cooldown_after and not self.cooldown_active:
+                            self.cooldown_active = True
+                            self.cooldown_sim_wins = 0
+                            self.cooldown_sim_count = 0
+                            self.log(f"🛑 Cool-down activated! {self.cooldown_loss_streak} consecutive losses. Switching to paper trading.")
+                    else:
+                        self.cooldown_loss_streak = 0
+                
                 # Auto-switch for duo_coverage
                 if self.strategy == "duo_coverage" and self.duo_switch_enabled:
                     if profit <= 0:
@@ -512,6 +578,20 @@ class TradingBot:
             
             self.stake = round(self.stake, 2)
             self.log(f"📈 Martingale: Stake adjusted to {self.stake} (seq P/L: {round(self.martingale_profit, 2)})")
+
+    def _check_simulated_result(self, contract_type, barrier, exit_digit):
+        """Check if a simulated trade would have won based on the exit tick digit."""
+        if contract_type == "DIGITOVER":
+            return exit_digit > barrier
+        elif contract_type == "DIGITUNDER":
+            return exit_digit < barrier
+        elif contract_type == "DIGITMATCH":
+            return exit_digit == barrier
+        elif contract_type == "DIGITEVEN":
+            return exit_digit % 2 == 0
+        elif contract_type == "DIGITODD":
+            return exit_digit % 2 != 0
+        return False
 
 
 class BotManager:
@@ -634,7 +714,12 @@ class BotManager:
                     'duo_trigger_digit': bot.duo_trigger_digit,
                     'duo_switch_enabled': bot.duo_switch_enabled,
                     'duo_switch_after': bot.duo_switch_after,
-                    'duo_consecutive_losses': bot.duo_consecutive_losses
+                    'duo_consecutive_losses': bot.duo_consecutive_losses,
+                    'cooldown_enabled': bot.cooldown_enabled,
+                    'cooldown_after': bot.cooldown_after,
+                    'cooldown_check': bot.cooldown_check,
+                    'cooldown_active': bot.cooldown_active,
+                    'cooldown_loss_streak': bot.cooldown_loss_streak
                 }
             })
         return statuses

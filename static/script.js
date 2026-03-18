@@ -69,7 +69,7 @@ function renderAccountCards(accounts) {
             <div class="account-balance">${acct.balance.toFixed(2)} <span style="font-size: 14px; color: var(--text-secondary);">${acct.currency}</span></div>
             <div class="account-profit" style="color: ${profitColor};">${profitSign}${acct.profit.toFixed(2)} P/L</div>
             <div class="account-stats">W: ${acct.wins} | L: ${acct.losses} | Trades: ${acct.total_trades} | ${acct.running_time}</div>
-            <div class="account-stats" style="margin-top: 2px;">Stake: <span style="color: var(--accent); font-weight: 600;">$${acct.settings.current_stake.toFixed(2)}</span>${acct.settings.martingale_enabled ? ' | Seq: <span style="color:' + (acct.settings.martingale_profit >= 0 ? '#238636' : '#da3633') + ';">$' + acct.settings.martingale_profit.toFixed(2) + '</span>' : ''}</div>
+            <div class="account-stats" style="margin-top: 2px;">Stake: <span style="color: var(--accent); font-weight: 600;">$${acct.settings.current_stake.toFixed(2)}</span>${acct.settings.martingale_enabled ? ' | Seq: <span style="color:' + (acct.settings.martingale_profit >= 0 ? '#238636' : '#da3633') + ';">$' + acct.settings.martingale_profit.toFixed(2) + '</span>' : ''}${acct.settings.cooldown_active ? ' | <span style="color: #d29922; font-weight: 600;">⏸ COOL-DOWN</span>' : ''}</div>
             <div class="account-actions" onclick="event.stopPropagation();">
                 <button class="btn-start" onclick="startAccount('${acct.account_id}')" ${isRunning ? 'disabled' : ''}>▶</button>
                 <button class="btn-stop" onclick="stopAccount('${acct.account_id}')" ${!isRunning ? 'disabled' : ''}>⏹</button>
@@ -123,6 +123,9 @@ function loadSettingsToForm(settings) {
     if (settings.duo_trigger_digit !== undefined) document.getElementById('duo-trigger-digit').value = settings.duo_trigger_digit;
     if (settings.duo_switch_enabled !== undefined) document.getElementById('duo-switch-enabled').checked = settings.duo_switch_enabled;
     if (settings.duo_switch_after !== undefined) document.getElementById('duo-switch-after').value = settings.duo_switch_after;
+    if (settings.cooldown_enabled !== undefined) document.getElementById('cooldown-enabled').checked = settings.cooldown_enabled;
+    if (settings.cooldown_after !== undefined) document.getElementById('cooldown-after').value = settings.cooldown_after;
+    if (settings.cooldown_check !== undefined) document.getElementById('cooldown-check').value = settings.cooldown_check;
     toggleStrategySettings();
     toggleMartingaleSettings();
     toggleMartingaleMode();
@@ -200,6 +203,9 @@ function getSettingsPayload() {
         duo_trigger_digit: document.getElementById('duo-trigger-digit').value,
         duo_switch_enabled: document.getElementById('duo-switch-enabled').checked,
         duo_switch_after: document.getElementById('duo-switch-after').value,
+        cooldown_enabled: document.getElementById('cooldown-enabled').checked,
+        cooldown_after: document.getElementById('cooldown-after').value,
+        cooldown_check: document.getElementById('cooldown-check').value,
     };
 }
 

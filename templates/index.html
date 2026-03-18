@@ -240,6 +240,30 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- Cool-Down (Loss Prevention) -->
+                <div style="border-top: 1px solid var(--border); margin-top: 15px; padding-top: 15px;">
+                    <div class="form-group">
+                        <label for="cooldown-enabled">Cool-Down (Loss Prevention):</label>
+                        <div style="display: flex; align-items: center;">
+                            <input type="checkbox" id="cooldown-enabled"
+                                style="width: 20px; height: 20px; margin-right: 10px;">
+                            <span style="font-size: 0.9rem; color: #8b949e;">Paper-trade after consecutive losses until a win is found</span>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="form-group">
+                            <label>Enter After X Losses</label>
+                            <input type="number" id="cooldown-after" value="3" min="1" max="20">
+                            <small>Stop real trades after this many consecutive losses</small>
+                        </div>
+                        <div class="form-group">
+                            <label>Check Next Y Trades</label>
+                            <input type="number" id="cooldown-check" value="2" min="1" max="10">
+                            <small>Simulate Y trades; resume if at least 1 would have won</small>
+                        </div>
+                    </div>
+                </div>
                 <div class="actions">
                     <button id="save-btn" onclick="saveSettings()">Save to Selected</button>
                     <button id="apply-all-btn" onclick="applyToAll()" class="secondary">Apply to All Accounts</button>
