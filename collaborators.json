@@ -1,10 +1,18 @@
 {
-  "admin_password": "admin123",
+  "admin_password": "mypathtosuccess",
   "viewer_password": "view123",
   "collaborators": [
     {
-      "name": "Alice",
-      "percentage": 60.0
+      "name": "Charles",
+      "percentage": 33.0
+    },
+    {
+      "name": "Jeff",
+      "percentage": 33.0
+    },
+    {
+      "name": "Qassim",
+      "percentage": 34.0
     }
   ]
 }
