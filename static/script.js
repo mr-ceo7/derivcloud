@@ -104,6 +104,7 @@ function loadSettingsToForm(settings) {
     document.getElementById('market').value = settings.market;
     document.getElementById('stake').value = settings.stake;
     document.getElementById('duration').value = settings.duration;
+    document.getElementById('take-profit').value = settings.take_profit !== undefined ? settings.take_profit : 0;
     document.getElementById('prediction').value = settings.prediction;
     document.getElementById('consecutive').value = settings.consecutive;
     document.getElementById('smart-mode').checked = settings.smart_mode;
@@ -184,6 +185,7 @@ function getSettingsPayload() {
         market: document.getElementById('market').value,
         stake: document.getElementById('stake').value,
         duration: document.getElementById('duration').value,
+        take_profit: parseFloat(document.getElementById('take-profit').value) || 0.0,
         prediction: document.getElementById('prediction').value,
         consecutive: document.getElementById('consecutive').value,
         smart_mode: document.getElementById('smart-mode').checked,

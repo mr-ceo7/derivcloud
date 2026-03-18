@@ -153,6 +153,7 @@ def update_settings():
         'prediction': data.get('prediction'),
         'consecutive': data.get('consecutive'),
         'smart_mode': data.get('smart_mode'),
+        'take_profit': data.get('take_profit'),
         'strategy': data.get('strategy'),
         'range_barrier': data.get('range_barrier'),
         'range_direction': data.get('range_direction'),

@@ -23,6 +23,7 @@ class TradingBot:
         self.prediction_digit = 0
         self.consecutive_triggers = 1
         self.smart_mode = False # Trade both 0 and 9
+        self.take_profit = 0.0  # Target profit to stop bot (0 = disabled)
         
         # Strategy selection: "digit_streak", "range_threshold", or "trio_coverage"
         self.strategy = "digit_streak"
@@ -96,7 +97,7 @@ class TradingBot:
         if len(self.logs) > 50:
             self.logs.pop()
 
-    def update_settings(self, token=None, market=None, stake=None, duration=None, prediction=None, consecutive=None, smart_mode=None, strategy=None, range_barrier=None, range_direction=None, martingale_enabled=None, martingale_mode=None, martingale_multiplier=None, martingale_increment=None, martingale_max_stake=None, trio_role=None, trio_trigger=None, trio_digit=None, duo_role=None, duo_trigger=None, duo_trigger_digit=None, duo_switch_enabled=None, duo_switch_after=None, cooldown_enabled=None, cooldown_after=None, cooldown_check=None):
+    def update_settings(self, token=None, market=None, stake=None, duration=None, prediction=None, consecutive=None, smart_mode=None, take_profit=None, strategy=None, range_barrier=None, range_direction=None, martingale_enabled=None, martingale_mode=None, martingale_multiplier=None, martingale_increment=None, martingale_max_stake=None, trio_role=None, trio_trigger=None, trio_digit=None, duo_role=None, duo_trigger=None, duo_trigger_digit=None, duo_switch_enabled=None, duo_switch_after=None, cooldown_enabled=None, cooldown_after=None, cooldown_check=None):
         if token: self.api_token = token
         if market: self.market = market
         if stake:
@@ -106,6 +107,7 @@ class TradingBot:
         if prediction is not None: self.prediction_digit = int(prediction)
         if consecutive: self.consecutive_triggers = int(consecutive)
         if smart_mode is not None: self.smart_mode = (str(smart_mode).lower() == 'true')
+        if take_profit is not None: self.take_profit = float(take_profit)
         if strategy: self.strategy = strategy
         if range_barrier is not None: self.range_barrier = int(range_barrier)
         if range_direction: self.range_direction = range_direction
@@ -548,6 +550,11 @@ class TradingBot:
                 # Apply martingale recovery
                 if self.martingale_enabled:
                     self._apply_martingale(profit)
+                
+                # Check Take Profit
+                if self.take_profit > 0 and self.total_profit >= self.take_profit:
+                    self.log(f"🎯 TAKE PROFIT REACHED: ${self.total_profit:.2f} >= ${self.take_profit:.2f}. Auto-stopping bot.")
+                    self.stop_bot()
 
     def _apply_martingale(self, profit):
         """Adjust stake based on martingale recovery logic."""
@@ -695,6 +702,7 @@ class BotManager:
                     'prediction': bot.prediction_digit,
                     'consecutive': bot.consecutive_triggers,
                     'smart_mode': bot.smart_mode,
+                    'take_profit': bot.take_profit,
                     'token_set': bot.api_token != "YOUR_API_TOKEN",
                     'strategy': bot.strategy,
                     'range_barrier': bot.range_barrier,
