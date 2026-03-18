@@ -192,7 +192,17 @@ class TradingBot:
         data = json.loads(message)
         
         if 'error' in data:
-            self.log(f"Error: {data['error']['message']}")
+            err_msg = data['error']['message']
+            err_code = data['error'].get('code')
+            self.log(f"Error: {err_msg}")
+            
+            if err_code in ['RateLimit', 'TooManyRequests']:
+                self.log("Rate limit hit. Retrying in 5s...")
+                async def _retry():
+                    await asyncio.sleep(5)
+                    await self.send({"authorize": self.api_token})
+                asyncio.create_task(_retry())
+                
             return
 
         msg_type = data.get('msg_type')
@@ -519,12 +529,22 @@ class BotManager:
         """
         async def _authorize(token):
             uri = "wss://ws.binaryws.com/websockets/v3?app_id=1089"
-            async with websockets.connect(uri) as ws:
-                await ws.send(json.dumps({"authorize": token}))
-                res = json.loads(await ws.recv())
-                if 'error' in res:
-                    raise ValueError(res['error']['message'])
-                return res['authorize']
+            for attempt in range(3):
+                try:
+                    async with websockets.connect(uri) as ws:
+                        await ws.send(json.dumps({"authorize": token}))
+                        res = json.loads(await ws.recv())
+                        if 'error' in res:
+                            if res['error'].get('code') == 'RateLimit' and attempt < 2:
+                                await asyncio.sleep(2)
+                                continue
+                            raise ValueError(res['error']['message'])
+                        return res['authorize']
+                except Exception as e:
+                    if attempt < 2:
+                        await asyncio.sleep(2)
+                        continue
+                    raise ValueError(str(e))
 
         loop = asyncio.new_event_loop()
         try:

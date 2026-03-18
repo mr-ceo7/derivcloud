@@ -113,6 +113,7 @@ def start_bot():
         for bot in manager.bots.values():
             if not bot.is_running:
                 bot.start_bot()
+                time.sleep(1.0) # Stagger connections to avoid auth rate limit
         return jsonify({'status': 'success', 'message': 'All bots started'})
     elif account_id:
         try:
