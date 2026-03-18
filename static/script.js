@@ -70,11 +70,11 @@ function renderAccountCards(accounts) {
             <div class="account-profit" style="color: ${profitColor};">${profitSign}${acct.profit.toFixed(2)} P/L</div>
             <div class="account-stats">W: ${acct.wins} | L: ${acct.losses} | Trades: ${acct.total_trades} | ${acct.running_time}</div>
             <div class="account-stats" style="margin-top: 2px;">Stake: <span style="color: var(--accent); font-weight: 600;">$${acct.settings.current_stake.toFixed(2)}</span>${acct.settings.martingale_enabled ? ' | Seq: <span style="color:' + (acct.settings.martingale_profit >= 0 ? '#238636' : '#da3633') + ';">$' + acct.settings.martingale_profit.toFixed(2) + '</span>' : ''}${acct.settings.cooldown_active ? ' | <span style="color: #d29922; font-weight: 600;">⏸ COOL-DOWN</span>' : ''}</div>
-            <div class="account-actions" onclick="event.stopPropagation();">
+            ${IS_READONLY ? '' : `<div class="account-actions" onclick="event.stopPropagation();">
                 <button class="btn-start" onclick="startAccount('${acct.account_id}')" ${isRunning ? 'disabled' : ''}>▶</button>
                 <button class="btn-stop" onclick="stopAccount('${acct.account_id}')" ${!isRunning ? 'disabled' : ''}>⏹</button>
                 <button class="btn-remove" onclick="removeAccount('${acct.account_id}')">✕</button>
-            </div>
+            </div>`}
         </div>`;
     }
     grid.innerHTML = html;
@@ -362,3 +362,108 @@ function toggleMartingaleMode() {
 // ── Init ──────────────────────────────────────────────────
 updateStats();
 setInterval(updateStats, 1000);
+fetchCollaborators();
+setInterval(fetchCollaborators, 3000);
+
+// Disable settings panel for viewers
+if (typeof IS_READONLY !== 'undefined' && IS_READONLY) {
+    document.addEventListener('DOMContentLoaded', () => {
+        const settingsPanel = document.querySelector('.settings-panel');
+        if (settingsPanel) {
+            settingsPanel.querySelectorAll('input, select, button').forEach(el => {
+                el.disabled = true;
+                el.style.opacity = '0.5';
+                el.style.pointerEvents = 'none';
+            });
+        }
+        // Hide reset button
+        const resetBtn = document.getElementById('reset-btn');
+        if (resetBtn) resetBtn.style.display = 'none';
+    });
+}
+
+// ── Collaborator Functions ───────────────────────────────────────
+
+function fetchCollaborators() {
+    fetch('/api/collaborators')
+        .then(res => res.json())
+        .then(data => renderCollaborators(data))
+        .catch(err => console.error('Collab fetch error:', err));
+}
+
+function renderCollaborators(data) {
+    const container = document.getElementById('collab-breakdown');
+    if (!container) return;
+    
+    const collabs = data.collaborators || [];
+    if (collabs.length === 0) {
+        container.innerHTML = '<div style="color: var(--text-secondary); font-size: 0.9rem;">No collaborators added yet.</div>';
+        return;
+    }
+    
+    const isReadonly = (typeof IS_READONLY !== 'undefined' && IS_READONLY);
+    
+    let html = '<div style="display: flex; flex-direction: column; gap: 8px;">';
+    collabs.forEach((c, i) => {
+        const pnlColor = c.pnl >= 0 ? '#238636' : '#da3633';
+        const pnlSign = c.pnl >= 0 ? '+' : '';
+        html += `
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; background: #0d1117; border-radius: 8px; border: 1px solid #21262d;">
+                <div>
+                    <span style="font-weight: 600; color: #e6edf3;">${i + 1}. ${c.name}</span>
+                    <span style="color: #8b949e; margin-left: 8px;">${c.percentage}%</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <span style="font-weight: 700; color: ${pnlColor}; font-size: 1.05rem;">${pnlSign}${c.pnl.toFixed(2)} USD</span>
+                    ${isReadonly ? '' : `<button onclick="removeCollaborator('${c.name}')" style="background: none; border: 1px solid #da3633; color: #da3633; padding: 2px 8px; border-radius: 4px; cursor: pointer; font-size: 0.8rem;">✕</button>`}
+                </div>
+            </div>`;
+    });
+    html += '</div>';
+    
+    // Total percentage
+    const totalPct = collabs.reduce((sum, c) => sum + c.percentage, 0);
+    html += `<div style="margin-top: 8px; font-size: 0.85rem; color: #8b949e;">Total allocated: <strong style="color: ${totalPct === 100 ? '#238636' : '#d29922'};">${totalPct}%</strong> / 100%</div>`;
+    
+    container.innerHTML = html;
+}
+
+function addCollaborator() {
+    const nameEl = document.getElementById('collab-name');
+    const pctEl = document.getElementById('collab-pct');
+    if (!nameEl || !pctEl) return;
+    
+    const name = nameEl.value.trim();
+    const percentage = parseFloat(pctEl.value);
+    
+    if (!name) return alert('Enter a name');
+    if (!percentage || percentage <= 0) return alert('Enter a valid percentage');
+    
+    fetch('/api/collaborators', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ name, percentage })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.status === 'error') {
+            alert(data.message);
+        } else {
+            nameEl.value = '';
+            pctEl.value = '';
+            fetchCollaborators();
+        }
+    });
+}
+
+function removeCollaborator(name) {
+    if (!confirm(`Remove ${name}?`)) return;
+    
+    fetch('/api/collaborators', {
+        method: 'DELETE',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ name })
+    })
+    .then(res => res.json())
+    .then(() => fetchCollaborators());
+}

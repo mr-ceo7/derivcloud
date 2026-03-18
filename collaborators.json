@@ -1,0 +1,10 @@
+{
+  "admin_password": "admin123",
+  "viewer_password": "view123",
+  "collaborators": [
+    {
+      "name": "Alice",
+      "percentage": 60.0
+    }
+  ]
+}
