@@ -25,7 +25,12 @@ function updateStats() {
 
                     // Digit display
                     const digitDisplay = document.getElementById('digit-display');
-                    if (acct.current_digit !== null) {
+                    if (acct.current_quote) {
+                        const len = acct.current_quote.length;
+                        const prefix = acct.current_quote.substring(0, len - 1);
+                        const lastChar = acct.current_quote.charAt(len - 1);
+                        digitDisplay.innerHTML = `<span style="font-size: 32px; color: var(--text-secondary);">${prefix}</span><span style="color: var(--accent);">${lastChar}</span>`;
+                    } else if (acct.current_digit !== null) {
                         digitDisplay.innerText = acct.current_digit;
                     }
                 }

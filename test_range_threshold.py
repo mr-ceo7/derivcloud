@@ -89,7 +89,8 @@ class TestRangeThresholdBelow(unittest.TestCase):
         print("✅ PASS: Counter properly resets when streak is broken")
 
     def test_resets_after_trade(self):
-        """Counter should reset after a trade, requiring a fresh streak."""
+        """Counter should reset after a trade, requiring a fresh streak.
+        Bot must wait until the contract fully settles before firing again."""
         self.sent_messages.clear()
 
         # Trigger first trade (3 consecutive below)
@@ -99,23 +100,41 @@ class TestRangeThresholdBelow(unittest.TestCase):
         self.assertEqual(len(self.sent_messages), 1, "First trade should fire")
         self.assertTrue(self.bot.waiting_for_result, "Should be waiting for result")
 
-        # Simulate the buy confirmation that resets waiting_for_result
-        # (In reality, Deriv sends proposal response then buy response)
+        # Simulate the buy confirmation — bot should STILL be waiting
         buy_msg = json.dumps({
             "msg_type": "buy",
             "buy": {"contract_id": "test_123"}
         })
         self._run(self.bot.handle_message(buy_msg))
-        self.assertFalse(self.bot.waiting_for_result, "Buy confirmation should clear waiting flag")
+        self.assertTrue(self.bot.waiting_for_result, "Buy confirmation should NOT clear waiting — contract not settled yet")
+
+        # Ticks during waiting should NOT trigger new trades
+        self._run(self.bot.handle_message(self._make_tick(100.04)))
+        self._run(self.bot.handle_message(self._make_tick(100.01)))
+        self._run(self.bot.handle_message(self._make_tick(100.02)))
+        proposals_sent = [m for m in self.sent_messages if 'proposal' in m and m.get('proposal') == 1]
+        self.assertEqual(len(proposals_sent), 1, "Should NOT fire while waiting for contract to settle")
+
+        # Simulate the contract settling (proposal_open_contract with is_sold)
+        settle_msg = json.dumps({
+            "msg_type": "proposal_open_contract",
+            "proposal_open_contract": {
+                "contract_id": "test_123",
+                "is_sold": 1,
+                "profit": -0.35,
+                "exit_tick_display_value": "100.07"
+            }
+        })
+        self._run(self.bot.handle_message(settle_msg))
+        self.assertFalse(self.bot.waiting_for_result, "Contract settled — should now allow new triggers")
 
         # Now 3 more below — should trigger again
         self._run(self.bot.handle_message(self._make_tick(100.04)))  # counter 1
         self._run(self.bot.handle_message(self._make_tick(100.01)))  # counter 2
         self._run(self.bot.handle_message(self._make_tick(100.02)))  # counter 3 -> TRADE
-        # Expected 3 total: trade1 proposal + proposal_open_contract subscribe + trade2 proposal
         proposals_sent = [m for m in self.sent_messages if 'proposal' in m and m.get('proposal') == 1]
         self.assertEqual(len(proposals_sent), 2, "Should have 2 trade proposals total")
-        print("✅ PASS: Counter resets after trade, needs fresh 3-tick streak")
+        print("✅ PASS: Counter resets after contract settles, needs fresh 3-tick streak")
 
     def test_no_trade_on_exact_barrier(self):
         """Digit equal to barrier should NOT count as 'below'."""

@@ -5,6 +5,141 @@ import logging
 import threading
 from datetime import datetime
 
+class GlobalTickManager:
+    def __init__(self):
+        self.market_history = {} # market -> list of dicts
+        self.subscriptions = set()
+        self.websocket = None
+        self.is_running = False
+        self.loop = None
+        self.thread = None
+        self.subscribers = [] # list of Bot instances
+
+    def start(self):
+        if self.is_running: return
+        self.is_running = True
+        self.loop = asyncio.new_event_loop()
+        self.thread = threading.Thread(target=self._run_loop, daemon=True)
+        self.thread.start()
+
+    def stop(self):
+        self.is_running = False
+
+    def _run_loop(self):
+        asyncio.set_event_loop(self.loop)
+        self.loop.run_until_complete(self._websocket_logic())
+
+    async def _websocket_logic(self):
+        uri = "wss://ws.binaryws.com/websockets/v3?app_id=69330"
+        async for websocket in websockets.connect(uri):
+            self.websocket = websocket
+            try:
+                for market in list(self.subscriptions):
+                    await self.websocket.send(json.dumps({"ticks": market, "subscribe": 1}))
+
+                async for message in websocket:
+                    if not self.is_running: break
+                    data = json.loads(message)
+                    if 'error' in data:
+                        logging.error(f"TickManager Error: {data['error']['message']}")
+                        continue
+
+                    if data.get('msg_type') == 'tick':
+                        tick = data['tick']
+                        market = tick['symbol']
+                        epoch = tick['epoch']
+                        quote = tick['quote']
+                        pip_size = tick.get('pip_size', 2)
+                        quote_str = f"{{:.{pip_size}f}}".format(quote)
+                        last_digit = int(quote_str[-1])
+                        
+                        if market not in self.market_history:
+                            self.market_history[market] = []
+                        
+                        if not self.market_history[market] or self.market_history[market][-1]['epoch'] != epoch:
+                            self.market_history[market].append({
+                                'epoch': epoch,
+                                'digit': last_digit
+                            })
+                            if len(self.market_history[market]) > 100:
+                                self.market_history[market].pop(0)
+
+                            for bot in list(self.subscribers):
+                                if bot.is_running and bot.market == market and bot.loop:
+                                    asyncio.run_coroutine_threadsafe(
+                                        bot.handle_message(message), 
+                                        bot.loop
+                                    )
+
+            except websockets.ConnectionClosed:
+                continue
+            except Exception as e:
+                if not self.is_running: break
+                await asyncio.sleep(5)
+
+    def subscribe_market(self, market):
+        if market not in self.subscriptions:
+            self.subscriptions.add(market)
+            if self.websocket and self.is_running and self.loop:
+                asyncio.run_coroutine_threadsafe(
+                    self.websocket.send(json.dumps({"ticks": market, "subscribe": 1})),
+                    self.loop
+                )
+
+    def register_bot(self, bot):
+        if bot not in self.subscribers:
+            self.subscribers.append(bot)
+            self.subscribe_market(bot.market)
+
+    def unregister_bot(self, bot):
+        if bot in self.subscribers:
+            self.subscribers.remove(bot)
+
+    def calculate_streak(self, bot):
+        history = self.market_history.get(bot.market, [])
+        streak = 0
+        streak_digit = -1
+        range_counter = 0
+
+        for tick in history:
+            digit = tick['digit']
+            if digit == streak_digit:
+                streak += 1
+            else:
+                streak = 1
+                streak_digit = digit
+
+            if bot.strategy == "range_threshold":
+                if bot.range_direction == "below" and digit < bot.range_barrier:
+                    range_counter += 1
+                elif bot.range_direction == "above" and digit > bot.range_barrier:
+                    range_counter += 1
+                else:
+                    range_counter = 0
+
+            # Simulate the reset that happens when the bot actually places a trade!
+            if bot.strategy == "range_threshold":
+                if range_counter >= bot.consecutive_triggers:
+                    range_counter = 0
+                    streak = 0
+                    streak_digit = -1
+            elif bot.strategy == "digit_streak":
+                if bot.smart_mode:
+                    if streak >= bot.consecutive_triggers and (streak_digit == 0 or streak_digit == 9):
+                        streak = 0
+                        streak_digit = -1
+                else:
+                    if streak >= bot.consecutive_triggers and streak_digit == bot.prediction_digit:
+                        streak = 0
+                        streak_digit = -1
+
+        bot.consecutive_counter = streak
+        bot.streak_digit = streak_digit
+        bot.range_consecutive_counter = range_counter
+
+global_tick_manager = GlobalTickManager()
+global_tick_manager.start()
+
 class TradingBot:
     # Net Profit Multipliers for $1 stake (approximate, based on probability - margin)
     PAYOUT_MULTIPLIERS = {
@@ -80,6 +215,7 @@ class TradingBot:
         self.losses = 0
         self.logs = []
         self.current_digit = None
+        self.current_quote = None
         self.consecutive_counter = 0
         self.streak_digit = -1
         self.start_time = None
@@ -99,7 +235,11 @@ class TradingBot:
 
     def update_settings(self, token=None, market=None, stake=None, duration=None, prediction=None, consecutive=None, smart_mode=None, take_profit=None, strategy=None, range_barrier=None, range_direction=None, martingale_enabled=None, martingale_mode=None, martingale_multiplier=None, martingale_increment=None, martingale_max_stake=None, trio_role=None, trio_trigger=None, trio_digit=None, duo_role=None, duo_trigger=None, duo_trigger_digit=None, duo_switch_enabled=None, duo_switch_after=None, cooldown_enabled=None, cooldown_after=None, cooldown_check=None):
         if token: self.api_token = token
-        if market: self.market = market
+        if market:
+            self.market = market
+            if self.is_running:
+                global_tick_manager.subscribe_market(market)
+                global_tick_manager.calculate_streak(self)
         if stake:
             self.stake = float(stake)
             self.base_stake = float(stake)
@@ -161,6 +301,10 @@ class TradingBot:
         self.start_time = datetime.now()
         self.log("Bot started.")
         
+        self.loop = asyncio.new_event_loop()
+        global_tick_manager.register_bot(self)
+        global_tick_manager.calculate_streak(self)
+        
         # Run event loop in separate thread
         self.thread = threading.Thread(target=self._run_loop, daemon=True)
         self.thread.start()
@@ -171,23 +315,22 @@ class TradingBot:
         self.is_running = False
         self.start_time = None
         self.log("Bot stopped.")
+        global_tick_manager.unregister_bot(self)
         # Loop will exit when is_running is False and socket closes
 
     def _run_loop(self):
-        self.loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self.loop)
         self.loop.run_until_complete(self._websocket_logic())
 
     async def _websocket_logic(self):
-        uri = "wss://ws.binaryws.com/websockets/v3?app_id=1089"
+        uri = "wss://ws.binaryws.com/websockets/v3?app_id=69330"
         async for websocket in websockets.connect(uri):
             self.websocket = websocket
             try:
                 # 1. Authorize
                 await self.send({"authorize": self.api_token})
                 
-                # 2. Subscribe to Ticks
-                await self.send({"ticks": self.market, "subscribe": 1})
+                # 2. Subscribe to Ticks (Handled globally directly now)
                 
                 # 3. Message Loop
                 async for message in websocket:
@@ -249,9 +392,11 @@ class TradingBot:
             self.last_tick_epoch = tick_epoch
             
             quote = data['tick']['quote']
-            quote_str = "{:.2f}".format(quote)
+            pip_size = data['tick'].get('pip_size', 2)
+            quote_str = f"{{:.{pip_size}f}}".format(quote)
             last_digit = int(quote_str[-1])
             self.current_digit = last_digit
+            self.current_quote = quote_str
             
             # ── Resolve Pending Cool-Down Simulation ──
             if self.cooldown_pending_sim:
@@ -467,7 +612,8 @@ class TradingBot:
                  self.log(f"Warning: Buy confirmed but no trigger data found!")
 
              self.log(f"Trade Placed! ID: {contract_id}. Waiting for result...")
-             self.waiting_for_result = False  # Allow new triggers
+             # Keep waiting_for_result = True until the contract settles
+             # This prevents the bot from firing new trades while the current one is open
              # Subscribe to this contract to get the result
              await self.send({"proposal_open_contract": 1, "contract_id": contract_id, "subscribe": 1})
 
@@ -517,6 +663,9 @@ class TradingBot:
                 # Clean up active trades
                 if contract_id in self.active_trades:
                     del self.active_trades[contract_id]
+                
+                # NOW allow new triggers — only after the contract fully settles
+                self.waiting_for_result = False
                 
                 self.total_profit += profit
                 self.total_trades += 1
@@ -615,7 +764,7 @@ class BotManager:
         Returns (account_id, balance, currency) or raises an error.
         """
         async def _authorize(token):
-            uri = "wss://ws.binaryws.com/websockets/v3?app_id=1089"
+            uri = "wss://ws.binaryws.com/websockets/v3?app_id=69330"
             for attempt in range(3):
                 try:
                     async with websockets.connect(uri) as ws:
@@ -695,6 +844,7 @@ class BotManager:
                 'total_trades': bot.total_trades,
                 'logs': bot.logs,
                 'current_digit': bot.current_digit,
+                'current_quote': bot.current_quote,
                 'settings': {
                     'market': bot.market,
                     'stake': bot.base_stake,
