@@ -919,6 +919,12 @@ class BotManager:
         now = time.time()
         for bot_id, bdata in list(self.broadcasters.items()):
             age = now - bdata.get('last_seen', 0)
+            
+            # If broadcaster hasn't been seen for 60 seconds, remove it completely
+            if age > 60:
+                del self.broadcasters[bot_id]
+                continue
+                
             is_online = age < self.BROADCASTER_TIMEOUT
 
             statuses.append({
