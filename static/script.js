@@ -61,6 +61,7 @@ function renderAccountCards(accounts) {
     for (const acct of accounts) {
         const isSelected = acct.account_id === selectedAccountId;
         const isRunning = acct.is_running;
+        const isBroadcaster = acct.is_broadcaster;
         let classes = 'account-card';
         if (isSelected) classes += ' selected';
         if (isRunning) classes += ' running';
@@ -68,14 +69,24 @@ function renderAccountCards(accounts) {
         const profitColor = acct.profit >= 0 ? '#238636' : '#da3633';
         const profitSign = acct.profit >= 0 ? '+' : '';
 
+        // Badge for broadcaster bots
+        const broadcasterBadge = isBroadcaster
+            ? `<span style="background: #1f6feb; color: #fff; padding: 2px 8px; border-radius: 10px; font-size: 0.7rem; font-weight: 700; margin-left: 6px;">📡 External</span>`
+            : '';
+
+        // Show source name for broadcasters
+        const displayName = isBroadcaster
+            ? (acct.broadcaster_name || acct.account_id)
+            : acct.account_id;
+
         html += `
         <div class="${classes}" onclick="selectAccount('${acct.account_id}')">
-            <div class="account-id">${acct.account_id}</div>
+            <div class="account-id">${displayName}${broadcasterBadge}</div>
             <div class="account-balance">${acct.balance.toFixed(2)} <span style="font-size: 14px; color: var(--text-secondary);">${acct.currency}</span></div>
             <div class="account-profit" style="color: ${profitColor};">${profitSign}${acct.profit.toFixed(2)} P/L</div>
             <div class="account-stats">W: ${acct.wins} | L: ${acct.losses} | Trades: ${acct.total_trades} | ${acct.running_time}</div>
             <div class="account-stats" style="margin-top: 2px;">Stake: <span style="color: var(--accent); font-weight: 600;">$${acct.settings.current_stake.toFixed(2)}</span>${acct.settings.martingale_enabled ? ' | Seq: <span style="color:' + (acct.settings.martingale_profit >= 0 ? '#238636' : '#da3633') + ';">$' + acct.settings.martingale_profit.toFixed(2) + '</span>' : ''}${acct.settings.cooldown_active ? ' | <span style="color: #d29922; font-weight: 600;">⏸ COOL-DOWN</span>' : ''}</div>
-            ${IS_READONLY ? '' : `<div class="account-actions" onclick="event.stopPropagation();">
+            ${IS_READONLY || isBroadcaster ? '' : `<div class="account-actions" onclick="event.stopPropagation();">
                 <button class="btn-start" onclick="startAccount('${acct.account_id}')" ${isRunning ? 'disabled' : ''}>▶</button>
                 <button class="btn-stop" onclick="stopAccount('${acct.account_id}')" ${!isRunning ? 'disabled' : ''}>⏹</button>
                 <button class="btn-remove" onclick="removeAccount('${acct.account_id}')">✕</button>
@@ -83,6 +94,24 @@ function renderAccountCards(accounts) {
         </div>`;
     }
     grid.innerHTML = html;
+
+    // Disable settings panel if a broadcaster is selected
+    const selectedAcct = accounts.find(a => a.account_id === selectedAccountId);
+    const settingsPanel = document.querySelector('.settings-panel');
+    if (settingsPanel) {
+        const isBroadcasterSelected = selectedAcct && selectedAcct.is_broadcaster;
+        settingsPanel.querySelectorAll('input, select, button').forEach(el => {
+            if (isBroadcasterSelected) {
+                el.disabled = true;
+                el.style.opacity = '0.5';
+                el.style.pointerEvents = 'none';
+            } else if (!IS_READONLY) {
+                el.disabled = false;
+                el.style.opacity = '1';
+                el.style.pointerEvents = 'auto';
+            }
+        });
+    }
 }
 
 // ── Select Account ────────────────────────────────────────

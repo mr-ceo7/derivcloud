@@ -3,6 +3,7 @@ import websockets
 import json
 import logging
 import threading
+import time
 from datetime import datetime
 
 class GlobalTickManager:
@@ -66,10 +67,13 @@ class GlobalTickManager:
 
                             for bot in list(self.subscribers):
                                 if bot.is_running and bot.market == market and bot.loop:
-                                    asyncio.run_coroutine_threadsafe(
-                                        bot.handle_message(message), 
-                                        bot.loop
-                                    )
+                                    try:
+                                        asyncio.run_coroutine_threadsafe(
+                                            bot.handle_message(message), 
+                                            bot.loop
+                                        )
+                                    except Exception as dispatch_err:
+                                        logging.error(f"TickManager dispatch error for {getattr(bot, 'account_id', '?')}: {dispatch_err}")
 
             except websockets.ConnectionClosed:
                 continue
@@ -224,6 +228,7 @@ class TradingBot:
         self.last_trigger = None # Temp store for trigger details
         self.last_tick_epoch = None  # Track last processed tick to skip duplicates
         self.waiting_for_result = False  # Prevent re-triggering while trade is pending
+        self.waiting_since = None          # Timestamp when waiting_for_result was set True
 
     def log(self, message):
         timestamp = datetime.now().strftime("%H:%M:%S")
@@ -280,6 +285,7 @@ class TradingBot:
         self.range_consecutive_counter = 0
         self.last_tick_epoch = None
         self.waiting_for_result = False
+        self.waiting_since = None
         self.stake = self.base_stake  # Reset stake to base
         self.martingale_profit = 0.0
         self.cooldown_active = False
@@ -352,6 +358,7 @@ class TradingBot:
             await self.websocket.send(json.dumps(data))
 
     async def handle_message(self, message):
+      try:
         data = json.loads(message)
         
         if 'error' in data:
@@ -377,6 +384,17 @@ class TradingBot:
             
             # Now that we are fully authorized, subscribe to live balance updates
             asyncio.create_task(self.send({"balance": 1, "subscribe": 1}))
+            
+            # ── Reconnection Recovery: re-subscribe to in-flight contracts ──
+            if self.active_trades:
+                for cid in list(self.active_trades.keys()):
+                    asyncio.create_task(self.send({"proposal_open_contract": 1, "contract_id": cid, "subscribe": 1}))
+                self.log(f"♻️ Re-subscribed to {len(self.active_trades)} open contract(s) after reconnect")
+            elif self.waiting_for_result:
+                # Proposal/buy was in progress but lost — no contract to track
+                self.waiting_for_result = False
+                self.waiting_since = None
+                self.log("⚠️ Cleared stale waiting_for_result (no active contracts after reconnect)")
 
         elif msg_type == 'balance':
             self.current_balance = data['balance']['balance']
@@ -390,6 +408,13 @@ class TradingBot:
             if tick_epoch and tick_epoch == self.last_tick_epoch:
                 return
             self.last_tick_epoch = tick_epoch
+            
+            # ── Safety Timeout: unblock if waiting_for_result stuck > 30s ──
+            if self.waiting_for_result and self.waiting_since:
+                if time.time() - self.waiting_since > 30:
+                    self.log("⚠️ Trade timeout! No result in 30s. Unblocking bot.")
+                    self.waiting_for_result = False
+                    self.waiting_since = None
             
             quote = data['tick']['quote']
             pip_size = data['tick'].get('pip_size', 2)
@@ -540,6 +565,7 @@ class TradingBot:
                     return
                 
                 self.waiting_for_result = True  # Block until this trade resolves
+                self.waiting_since = time.time()
                 
                 # --- APPLY EXACT RECOVERY MARTINGALE ---
                 if self.martingale_enabled and self.martingale_mode == "exact_recovery" and self.martingale_profit < 0:
@@ -666,6 +692,7 @@ class TradingBot:
                 
                 # NOW allow new triggers — only after the contract fully settles
                 self.waiting_for_result = False
+                self.waiting_since = None
                 
                 self.total_profit += profit
                 self.total_trades += 1
@@ -704,6 +731,9 @@ class TradingBot:
                 if self.take_profit > 0 and self.total_profit >= self.take_profit:
                     self.log(f"🎯 TAKE PROFIT REACHED: ${self.total_profit:.2f} >= ${self.take_profit:.2f}. Auto-stopping bot.")
                     self.stop_bot()
+
+      except Exception as e:
+        self.log(f"⚠️ handle_message error: {e}")
 
     def _apply_martingale(self, profit):
         """Adjust stake based on martingale recovery logic."""
@@ -753,8 +783,11 @@ class TradingBot:
 class BotManager:
     """Manages multiple TradingBot instances, one per Deriv account."""
 
+    BROADCASTER_TIMEOUT = 30  # seconds before marking a broadcaster as offline
+
     def __init__(self):
         self.bots = {}  # account_id -> TradingBot
+        self.broadcasters = {}  # bot_id -> {data dict + last_seen timestamp}
 
     def add_account(self, token):
         """Create a new TradingBot for the given token.
@@ -820,7 +853,7 @@ class BotManager:
         return self.bots[account_id]
 
     def get_all_statuses(self):
-        """Return a list of status dicts for every bot."""
+        """Return a list of status dicts for every bot (local + broadcasters)."""
         statuses = []
         for account_id, bot in self.bots.items():
             runtime = "00:00:00"
@@ -835,6 +868,7 @@ class BotManager:
             statuses.append({
                 'account_id': account_id,
                 'is_running': bot.is_running,
+                'is_broadcaster': False,
                 'running_time': runtime,
                 'balance': bot.current_balance,
                 'currency': bot.currency,
@@ -880,15 +914,91 @@ class BotManager:
                     'cooldown_loss_streak': bot.cooldown_loss_streak
                 }
             })
+
+        # Append broadcaster bots
+        now = time.time()
+        for bot_id, bdata in list(self.broadcasters.items()):
+            age = now - bdata.get('last_seen', 0)
+            is_online = age < self.BROADCASTER_TIMEOUT
+
+            statuses.append({
+                'account_id': bdata.get('bot_id', bot_id),
+                'is_running': is_online and bdata.get('is_running', False),
+                'is_broadcaster': True,
+                'broadcaster_source': bdata.get('source', 'unknown'),
+                'broadcaster_name': bdata.get('bot_name', bot_id),
+                'running_time': bdata.get('running_time', '00:00:00'),
+                'balance': bdata.get('balance', 0.0),
+                'currency': bdata.get('currency', 'USD'),
+                'profit': round(bdata.get('profit', 0.0), 2),
+                'wins': bdata.get('wins', 0),
+                'losses': bdata.get('losses', 0),
+                'total_trades': bdata.get('total_trades', 0),
+                'logs': bdata.get('logs', []),
+                'current_digit': bdata.get('current_digit', None),
+                'current_quote': bdata.get('current_quote', None),
+                'settings': {
+                    'market': bdata.get('market', 'N/A'),
+                    'stake': bdata.get('current_stake', 0.35),
+                    'duration': bdata.get('duration', 1),
+                    'prediction': 0,
+                    'consecutive': 1,
+                    'smart_mode': False,
+                    'take_profit': 0,
+                    'token_set': True,
+                    'strategy': bdata.get('strategy', 'N/A'),
+                    'range_barrier': 5,
+                    'range_direction': 'below',
+                    'martingale_enabled': False,
+                    'martingale_mode': 'multiply',
+                    'martingale_multiplier': 2.0,
+                    'martingale_increment': 0.35,
+                    'martingale_max_stake': 10.0,
+                    'current_stake': bdata.get('current_stake', 0.35),
+                    'martingale_profit': 0.0,
+                    'trio_role': 'over_5',
+                    'trio_trigger': 'every_tick',
+                    'trio_digit': 5,
+                    'duo_role': 'even',
+                    'duo_trigger': 'every_tick',
+                    'duo_trigger_digit': 5,
+                    'duo_switch_enabled': False,
+                    'duo_switch_after': 3,
+                    'duo_consecutive_losses': 0,
+                    'cooldown_enabled': False,
+                    'cooldown_after': 3,
+                    'cooldown_check': 2,
+                    'cooldown_active': False,
+                    'cooldown_loss_streak': 0
+                }
+            })
+
         return statuses
 
+    def update_broadcaster(self, data):
+        """Upsert a broadcaster bot's status data."""
+        bot_id = data.get('bot_id')
+        if not bot_id:
+            raise ValueError("bot_id is required")
+        data['last_seen'] = time.time()
+        self.broadcasters[bot_id] = data
+
     def total_profit(self):
-        """Sum of profits across all bots."""
-        return round(sum(b.total_profit for b in self.bots.values()), 2)
+        """Sum of profits across all bots (local + broadcasters)."""
+        local = sum(b.total_profit for b in self.bots.values())
+        broadcast = sum(b.get('profit', 0.0) for b in self.broadcasters.values())
+        return round(local + broadcast, 2)
 
     def active_count(self):
-        """Number of currently running bots."""
-        return sum(1 for b in self.bots.values() if b.is_running)
+        """Number of currently running bots (local + online broadcasters)."""
+        local = sum(1 for b in self.bots.values() if b.is_running)
+        now = time.time()
+        broadcast = sum(
+            1 for b in self.broadcasters.values()
+            if b.get('is_running', False) and (now - b.get('last_seen', 0)) < self.BROADCASTER_TIMEOUT
+        )
+        return local + broadcast
 
 
 manager = BotManager()
+

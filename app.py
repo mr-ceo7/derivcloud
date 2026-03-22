@@ -97,6 +97,20 @@ def favicon():
     return send_from_directory(os.path.join(app.root_path, 'static'),
                                'favicon.png', mimetype='image/png')
 
+# ── Broadcaster API (public, no auth) ──────────────────────────────
+
+@app.route('/api/broadcast', methods=['POST'])
+def broadcast():
+    """Receive stats from external broadcaster bots. Public endpoint."""
+    data = request.json
+    if not data or not data.get('bot_id'):
+        return jsonify({'status': 'error', 'message': 'bot_id is required'}), 400
+    try:
+        manager.update_broadcaster(data)
+        return jsonify({'status': 'success', 'message': f"Broadcaster {data['bot_id']} updated"})
+    except ValueError as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 400
+
 # ── Multi-Account API ──────────────────────────────────────────────
 
 @app.route('/api/status')
